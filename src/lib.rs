@@ -1,0 +1,11 @@
+pub mod activity;
+pub mod cli;
+pub mod git;
+pub mod group;
+pub mod state;
+pub mod ui;
+pub mod user_vars;
+pub mod wezterm;
+
+pub const SPINNER_ICON: &str = "●";
+pub const SPINNER_PULSE: &[u8] = &[82, 78, 114, 150, 186, 150, 114, 78];

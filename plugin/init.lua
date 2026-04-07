@@ -1,4 +1,4 @@
--- wezterm-agent-dashboard.lua
+-- wezterm-agent-dashboard / plugin/init.lua
 -- WezTerm Lua module for agent dashboard integration.
 --
 -- Provides:
@@ -6,7 +6,7 @@
 --   2. Keybinding to toggle the dashboard sidebar
 --
 -- Usage in wezterm.lua:
---   local dashboard = require("wezterm-agent-dashboard")
+--   local dashboard = wezterm.plugin.require("https://github.com/0maru/wezterm-agent-dashboard")
 --   dashboard.setup({ toggle_key = { key = "e", mods = "LEADER" } })
 --   dashboard.apply_to_config(config)
 

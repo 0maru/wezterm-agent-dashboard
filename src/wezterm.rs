@@ -586,6 +586,166 @@ mod tests {
     }
 
     #[test]
+    fn test_permission_mode_from_str() {
+        assert_eq!(PermissionMode::from_str("plan"), PermissionMode::Plan);
+        assert_eq!(PermissionMode::from_str("acceptEdits"), PermissionMode::AcceptEdits);
+        assert_eq!(PermissionMode::from_str("auto"), PermissionMode::Auto);
+        assert_eq!(PermissionMode::from_str("bypassPermissions"), PermissionMode::BypassPermissions);
+        assert_eq!(PermissionMode::from_str("default"), PermissionMode::Default);
+        assert_eq!(PermissionMode::from_str("unknown"), PermissionMode::Default);
+        assert_eq!(PermissionMode::from_str(""), PermissionMode::Default);
+    }
+
+    #[test]
+    fn test_pane_status_icons() {
+        assert_eq!(PaneStatus::Running.icon(), "●");
+        assert_eq!(PaneStatus::Waiting.icon(), "◐");
+        assert_eq!(PaneStatus::Idle.icon(), "○");
+        assert_eq!(PaneStatus::Error.icon(), "✕");
+        assert_eq!(PaneStatus::Unknown.icon(), "·");
+    }
+
+    #[test]
+    fn test_agent_type_display() {
+        assert_eq!(format!("{}", AgentType::Claude), "claude");
+        assert_eq!(format!("{}", AgentType::Codex), "codex");
+    }
+
+    #[test]
+    fn test_find_focused_pane_returns_active() {
+        let workspaces = vec![WorkspaceInfo {
+            workspace_name: "default".into(),
+            tabs: vec![TabInfo {
+                tab_id: 0,
+                tab_title: "test".into(),
+                tab_active: true,
+                panes: vec![
+                    PaneInfo {
+                        pane_id: 1,
+                        tab_id: 0,
+                        window_id: 0,
+                        workspace: "default".into(),
+                        pane_active: false,
+                        status: PaneStatus::Idle,
+                        attention: false,
+                        agent: AgentType::Claude,
+                        path: "/tmp".into(),
+                        prompt: String::new(),
+                        prompt_is_response: false,
+                        started_at: None,
+                        wait_reason: String::new(),
+                        permission_mode: PermissionMode::Default,
+                        subagents: Vec::new(),
+                        pane_pid: None,
+                    },
+                    PaneInfo {
+                        pane_id: 2,
+                        tab_id: 0,
+                        window_id: 0,
+                        workspace: "default".into(),
+                        pane_active: true,
+                        status: PaneStatus::Running,
+                        attention: false,
+                        agent: AgentType::Claude,
+                        path: "/tmp".into(),
+                        prompt: String::new(),
+                        prompt_is_response: false,
+                        started_at: None,
+                        wait_reason: String::new(),
+                        permission_mode: PermissionMode::Default,
+                        subagents: Vec::new(),
+                        pane_pid: None,
+                    },
+                ],
+            }],
+        }];
+        assert_eq!(find_focused_pane(&workspaces, 999), Some(2));
+    }
+
+    #[test]
+    fn test_find_focused_pane_excludes_dashboard() {
+        let workspaces = vec![WorkspaceInfo {
+            workspace_name: "default".into(),
+            tabs: vec![TabInfo {
+                tab_id: 0,
+                tab_title: "test".into(),
+                tab_active: true,
+                panes: vec![PaneInfo {
+                    pane_id: 42,
+                    tab_id: 0,
+                    window_id: 0,
+                    workspace: "default".into(),
+                    pane_active: true,
+                    status: PaneStatus::Running,
+                    attention: false,
+                    agent: AgentType::Claude,
+                    path: "/tmp".into(),
+                    prompt: String::new(),
+                    prompt_is_response: false,
+                    started_at: None,
+                    wait_reason: String::new(),
+                    permission_mode: PermissionMode::Default,
+                    subagents: Vec::new(),
+                    pane_pid: None,
+                }],
+            }],
+        }];
+        // pane 42 is the dashboard, should be excluded
+        assert_eq!(find_focused_pane(&workspaces, 42), None);
+    }
+
+    #[test]
+    fn test_find_focused_pane_empty() {
+        assert_eq!(find_focused_pane(&[], 0), None);
+    }
+
+    #[test]
+    fn test_build_workspaces_multiple_tabs() {
+        let mut vars1 = HashMap::new();
+        vars1.insert("agent_type".to_string(), "claude".to_string());
+        vars1.insert("agent_status".to_string(), "running".to_string());
+
+        let mut vars2 = HashMap::new();
+        vars2.insert("agent_type".to_string(), "codex".to_string());
+        vars2.insert("agent_status".to_string(), "idle".to_string());
+
+        let raw = vec![
+            RawWezTermPane {
+                window_id: 0,
+                tab_id: 1,
+                tab_title: "tab1".to_string(),
+                pane_id: 10,
+                workspace: "ws".to_string(),
+                title: "".to_string(),
+                cwd: "file:///home/user".to_string(),
+                is_active: true,
+                is_zoomed: false,
+                tty_name: String::new(),
+                user_vars: vars1,
+            },
+            RawWezTermPane {
+                window_id: 0,
+                tab_id: 2,
+                tab_title: "tab2".to_string(),
+                pane_id: 20,
+                workspace: "ws".to_string(),
+                title: "".to_string(),
+                cwd: "file:///home/user".to_string(),
+                is_active: false,
+                is_zoomed: false,
+                tty_name: String::new(),
+                user_vars: vars2,
+            },
+        ];
+
+        let result = build_workspaces(raw, None);
+        assert_eq!(result.len(), 1); // 1 workspace
+        assert_eq!(result[0].tabs.len(), 2); // 2 tabs
+        assert_eq!(result[0].tabs[0].panes[0].agent, AgentType::Claude);
+        assert_eq!(result[0].tabs[1].panes[0].agent, AgentType::Codex);
+    }
+
+    #[test]
     fn test_build_workspaces_excludes_dashboard() {
         let mut user_vars = HashMap::new();
         user_vars.insert("agent_type".to_string(), "claude".to_string());

@@ -82,3 +82,52 @@ pub fn sanitize_value(s: &str) -> String {
         .replace('\r', " ")
         .replace('|', " ")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sanitize_value_newlines() {
+        assert_eq!(sanitize_value("hello\nworld"), "hello world");
+    }
+
+    #[test]
+    fn test_sanitize_value_carriage_return() {
+        assert_eq!(sanitize_value("hello\r\nworld"), "hello  world");
+    }
+
+    #[test]
+    fn test_sanitize_value_pipes() {
+        assert_eq!(sanitize_value("a|b|c"), "a b c");
+    }
+
+    #[test]
+    fn test_sanitize_value_clean() {
+        assert_eq!(sanitize_value("hello world"), "hello world");
+    }
+
+    #[test]
+    fn test_json_str_existing_key() {
+        let val = serde_json::json!({"name": "test", "count": 42});
+        assert_eq!(json_str(&val, "name"), "test");
+    }
+
+    #[test]
+    fn test_json_str_missing_key() {
+        let val = serde_json::json!({"name": "test"});
+        assert_eq!(json_str(&val, "missing"), "");
+    }
+
+    #[test]
+    fn test_json_str_non_string_value() {
+        let val = serde_json::json!({"count": 42});
+        assert_eq!(json_str(&val, "count"), "");
+    }
+
+    #[test]
+    fn test_json_str_null() {
+        let val = serde_json::Value::Null;
+        assert_eq!(json_str(&val, "anything"), "");
+    }
+}

@@ -407,3 +407,283 @@ fn current_epoch() -> u64 {
         .unwrap_or_default()
         .as_secs()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::group::{PaneGitInfo, RepoGroup};
+    use crate::wezterm::{AgentType, PaneInfo, PaneStatus, PermissionMode};
+
+    fn make_pane(pane_id: u64, status: PaneStatus) -> PaneInfo {
+        PaneInfo {
+            pane_id,
+            tab_id: 0,
+            window_id: 0,
+            workspace: "default".into(),
+            pane_active: false,
+            status,
+            attention: false,
+            agent: AgentType::Claude,
+            path: "/tmp/test".into(),
+            prompt: String::new(),
+            prompt_is_response: false,
+            started_at: None,
+            wait_reason: String::new(),
+            permission_mode: PermissionMode::Default,
+            subagents: Vec::new(),
+            pane_pid: None,
+        }
+    }
+
+    fn make_git_info() -> PaneGitInfo {
+        PaneGitInfo {
+            repo_root: Some("/tmp/test".into()),
+            branch: Some("main".into()),
+            is_worktree: false,
+        }
+    }
+
+    // -- AgentFilter tests --
+
+    #[test]
+    fn test_agent_filter_next_cycle() {
+        let mut f = AgentFilter::All;
+        f = f.next(); assert_eq!(f, AgentFilter::Running);
+        f = f.next(); assert_eq!(f, AgentFilter::Waiting);
+        f = f.next(); assert_eq!(f, AgentFilter::Idle);
+        f = f.next(); assert_eq!(f, AgentFilter::Error);
+        f = f.next(); assert_eq!(f, AgentFilter::All);
+    }
+
+    #[test]
+    fn test_agent_filter_prev_cycle() {
+        let mut f = AgentFilter::All;
+        f = f.prev(); assert_eq!(f, AgentFilter::Error);
+        f = f.prev(); assert_eq!(f, AgentFilter::Idle);
+        f = f.prev(); assert_eq!(f, AgentFilter::Waiting);
+        f = f.prev(); assert_eq!(f, AgentFilter::Running);
+        f = f.prev(); assert_eq!(f, AgentFilter::All);
+    }
+
+    #[test]
+    fn test_agent_filter_matches() {
+        assert!(AgentFilter::All.matches(PaneStatus::Running));
+        assert!(AgentFilter::All.matches(PaneStatus::Idle));
+        assert!(AgentFilter::Running.matches(PaneStatus::Running));
+        assert!(!AgentFilter::Running.matches(PaneStatus::Idle));
+        assert!(AgentFilter::Waiting.matches(PaneStatus::Waiting));
+        assert!(!AgentFilter::Waiting.matches(PaneStatus::Error));
+        assert!(AgentFilter::Idle.matches(PaneStatus::Idle));
+        assert!(!AgentFilter::Idle.matches(PaneStatus::Running));
+        assert!(AgentFilter::Error.matches(PaneStatus::Error));
+        assert!(!AgentFilter::Error.matches(PaneStatus::Waiting));
+    }
+
+    // -- BottomTab tests --
+
+    #[test]
+    fn test_bottom_tab_toggle() {
+        assert_eq!(BottomTab::Activity.toggle(), BottomTab::GitStatus);
+        assert_eq!(BottomTab::GitStatus.toggle(), BottomTab::Activity);
+    }
+
+    // -- ScrollState tests --
+
+    #[test]
+    fn test_scroll_down() {
+        let mut s = ScrollState { offset: 0, total_lines: 20, visible_height: 10 };
+        s.scroll(5);
+        assert_eq!(s.offset, 5);
+        s.scroll(10);
+        // max = 20 - 10 = 10
+        assert_eq!(s.offset, 10);
+    }
+
+    #[test]
+    fn test_scroll_up() {
+        let mut s = ScrollState { offset: 5, total_lines: 20, visible_height: 10 };
+        s.scroll(-3);
+        assert_eq!(s.offset, 2);
+        s.scroll(-10);
+        assert_eq!(s.offset, 0);
+    }
+
+    #[test]
+    fn test_scroll_clamp() {
+        let mut s = ScrollState { offset: 15, total_lines: 20, visible_height: 10 };
+        s.clamp();
+        assert_eq!(s.offset, 10); // max = 20 - 10 = 10
+
+        s.total_lines = 5;
+        s.clamp();
+        assert_eq!(s.offset, 0); // max = 0 (visible_height > total_lines)
+    }
+
+    #[test]
+    fn test_scroll_when_content_fits() {
+        let mut s = ScrollState { offset: 0, total_lines: 5, visible_height: 10 };
+        s.scroll(5);
+        assert_eq!(s.offset, 0); // max = 0, can't scroll
+    }
+
+    // -- AppState tests --
+
+    fn make_state_with_groups(groups: Vec<RepoGroup>) -> AppState {
+        let mut state = AppState::new(999);
+        state.repo_groups = groups;
+        // Manually build row targets
+        state.agent_row_targets.clear();
+        for group in &state.repo_groups {
+            for (pane, _) in &group.panes {
+                if state.agent_filter.matches(pane.status) {
+                    state.agent_row_targets.push(RowTarget {
+                        pane_id: pane.pane_id,
+                        tab_id: pane.tab_id,
+                        agent: pane.agent,
+                    });
+                }
+            }
+        }
+        state
+    }
+
+    #[test]
+    fn test_status_counts() {
+        let groups = vec![RepoGroup {
+            name: "project".into(),
+            has_focus: false,
+            panes: vec![
+                (make_pane(1, PaneStatus::Running), make_git_info()),
+                (make_pane(2, PaneStatus::Running), make_git_info()),
+                (make_pane(3, PaneStatus::Idle), make_git_info()),
+                (make_pane(4, PaneStatus::Error), make_git_info()),
+                (make_pane(5, PaneStatus::Waiting), make_git_info()),
+            ],
+        }];
+        let state = make_state_with_groups(groups);
+        let (all, running, waiting, idle, error) = state.status_counts();
+        assert_eq!(all, 5);
+        assert_eq!(running, 2);
+        assert_eq!(waiting, 1);
+        assert_eq!(idle, 1);
+        assert_eq!(error, 1);
+    }
+
+    #[test]
+    fn test_status_counts_with_repo_filter() {
+        let groups = vec![
+            RepoGroup {
+                name: "project-a".into(),
+                has_focus: false,
+                panes: vec![
+                    (make_pane(1, PaneStatus::Running), make_git_info()),
+                ],
+            },
+            RepoGroup {
+                name: "project-b".into(),
+                has_focus: false,
+                panes: vec![
+                    (make_pane(2, PaneStatus::Idle), make_git_info()),
+                    (make_pane(3, PaneStatus::Error), make_git_info()),
+                ],
+            },
+        ];
+        let mut state = make_state_with_groups(groups);
+        state.repo_filter = RepoFilter::Repo("project-b".into());
+
+        let (all, running, _waiting, idle, error) = state.status_counts();
+        assert_eq!(all, 2);
+        assert_eq!(running, 0);
+        assert_eq!(idle, 1);
+        assert_eq!(error, 1);
+    }
+
+    #[test]
+    fn test_select_prev_next() {
+        let groups = vec![RepoGroup {
+            name: "project".into(),
+            has_focus: false,
+            panes: vec![
+                (make_pane(1, PaneStatus::Running), make_git_info()),
+                (make_pane(2, PaneStatus::Idle), make_git_info()),
+                (make_pane(3, PaneStatus::Waiting), make_git_info()),
+            ],
+        }];
+        let mut state = make_state_with_groups(groups);
+        assert_eq!(state.selected_agent_row, 0);
+
+        state.select_next();
+        assert_eq!(state.selected_agent_row, 1);
+        state.select_next();
+        assert_eq!(state.selected_agent_row, 2);
+        state.select_next();
+        // Should stay at 2 (boundary)
+        assert_eq!(state.selected_agent_row, 2);
+
+        state.select_prev();
+        assert_eq!(state.selected_agent_row, 1);
+        state.select_prev();
+        assert_eq!(state.selected_agent_row, 0);
+        state.select_prev();
+        // Should stay at 0 (boundary)
+        assert_eq!(state.selected_agent_row, 0);
+    }
+
+    #[test]
+    fn test_selected_pane() {
+        let groups = vec![RepoGroup {
+            name: "project".into(),
+            has_focus: false,
+            panes: vec![
+                (make_pane(10, PaneStatus::Running), make_git_info()),
+                (make_pane(20, PaneStatus::Idle), make_git_info()),
+            ],
+        }];
+        let mut state = make_state_with_groups(groups);
+
+        assert_eq!(state.selected_pane().unwrap().pane_id, 10);
+        state.select_next();
+        assert_eq!(state.selected_pane().unwrap().pane_id, 20);
+    }
+
+    #[test]
+    fn test_selected_pane_empty() {
+        let state = make_state_with_groups(vec![]);
+        assert!(state.selected_pane().is_none());
+    }
+
+    #[test]
+    fn test_find_pane() {
+        let groups = vec![RepoGroup {
+            name: "project".into(),
+            has_focus: false,
+            panes: vec![
+                (make_pane(10, PaneStatus::Running), make_git_info()),
+                (make_pane(20, PaneStatus::Idle), make_git_info()),
+            ],
+        }];
+        let state = make_state_with_groups(groups);
+
+        assert_eq!(state.find_pane(10).unwrap().pane_id, 10);
+        assert_eq!(state.find_pane(20).unwrap().status, PaneStatus::Idle);
+        assert!(state.find_pane(99).is_none());
+    }
+
+    #[test]
+    fn test_repo_names() {
+        let groups = vec![
+            RepoGroup {
+                name: "alpha".into(),
+                has_focus: false,
+                panes: vec![(make_pane(1, PaneStatus::Running), make_git_info())],
+            },
+            RepoGroup {
+                name: "beta".into(),
+                has_focus: true,
+                panes: vec![(make_pane(2, PaneStatus::Idle), make_git_info())],
+            },
+        ];
+        let state = make_state_with_groups(groups);
+        assert_eq!(state.repo_names(), vec!["alpha", "beta"]);
+    }
+}

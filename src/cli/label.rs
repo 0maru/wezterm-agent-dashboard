@@ -187,4 +187,104 @@ mod tests {
         let input = json!({});
         assert_eq!(extract_tool_label("UnknownTool", &input, &Value::Null), "");
     }
+
+    #[test]
+    fn test_notebook_edit_label() {
+        let input = json!({"notebook_path": "/home/user/analysis.ipynb"});
+        assert_eq!(
+            extract_tool_label("NotebookEdit", &input, &Value::Null),
+            "analysis.ipynb"
+        );
+    }
+
+    #[test]
+    fn test_write_label() {
+        let input = json!({"file_path": "/tmp/output.txt"});
+        assert_eq!(
+            extract_tool_label("Write", &input, &Value::Null),
+            "output.txt"
+        );
+    }
+
+    #[test]
+    fn test_web_search_label() {
+        let input = json!({"query": "rust async await"});
+        assert_eq!(
+            extract_tool_label("WebSearch", &input, &Value::Null),
+            "rust async await"
+        );
+    }
+
+    #[test]
+    fn test_web_fetch_strips_http() {
+        let input = json!({"url": "http://example.com/page"});
+        assert_eq!(
+            extract_tool_label("WebFetch", &input, &Value::Null),
+            "example.com/page"
+        );
+    }
+
+    #[test]
+    fn test_skill_label() {
+        let input = json!({"skill": "commit"});
+        assert_eq!(
+            extract_tool_label("Skill", &input, &Value::Null),
+            "commit"
+        );
+    }
+
+    #[test]
+    fn test_tool_search_label() {
+        let input = json!({"query": "select:Read,Edit"});
+        assert_eq!(
+            extract_tool_label("ToolSearch", &input, &Value::Null),
+            "select:Read,Edit"
+        );
+    }
+
+    #[test]
+    fn test_task_create_without_response_id() {
+        let input = json!({"subject": "Do something"});
+        let response = json!({});
+        assert_eq!(
+            extract_tool_label("TaskCreate", &input, &response),
+            "Do something"
+        );
+    }
+
+    #[test]
+    fn test_task_get_label() {
+        let input = json!({"taskId": "7"});
+        assert_eq!(
+            extract_tool_label("TaskGet", &input, &Value::Null),
+            "#7"
+        );
+    }
+
+    #[test]
+    fn test_send_message_label() {
+        let input = json!({"to": "agent-123"});
+        assert_eq!(
+            extract_tool_label("SendMessage", &input, &Value::Null),
+            "agent-123"
+        );
+    }
+
+    #[test]
+    fn test_ask_user_question_empty_questions() {
+        let input = json!({"questions": []});
+        assert_eq!(
+            extract_tool_label("AskUserQuestion", &input, &Value::Null),
+            ""
+        );
+    }
+
+    #[test]
+    fn test_glob_label() {
+        let input = json!({"pattern": "**/*.rs"});
+        assert_eq!(
+            extract_tool_label("Glob", &input, &Value::Null),
+            "**/*.rs"
+        );
+    }
 }

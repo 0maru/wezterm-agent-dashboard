@@ -297,3 +297,86 @@ fn trim_log_file(path: &PathBuf, keep: usize, threshold: usize) {
     let trimmed = lines[start..].join("\n") + "\n";
     let _ = fs::write(path, trimmed);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn test_is_system_message_slash_command() {
+        assert!(is_system_message("/help"));
+        assert!(is_system_message("/exit"));
+    }
+
+    #[test]
+    fn test_is_system_message_ctrl() {
+        assert!(is_system_message("CTRL-C"));
+        assert!(is_system_message("CTRL-D"));
+    }
+
+    #[test]
+    fn test_is_system_message_short() {
+        assert!(is_system_message("a"));
+        assert!(is_system_message(""));
+    }
+
+    #[test]
+    fn test_is_not_system_message() {
+        assert!(!is_system_message("Fix the bug in main.rs"));
+        assert!(!is_system_message("Add tests to the project"));
+        assert!(!is_system_message("hi"));
+    }
+
+    #[test]
+    fn test_activity_log_path() {
+        let path = activity_log_path("42");
+        assert_eq!(path, PathBuf::from("/tmp/wezterm-agent-activity-42.log"));
+    }
+
+    #[test]
+    fn test_trim_log_file_under_threshold() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test-trim-under.log");
+        // Write 5 lines, threshold is 10 — should not trim
+        let mut f = fs::File::create(&path).unwrap();
+        for i in 0..5 {
+            writeln!(f, "line {i}").unwrap();
+        }
+        drop(f);
+
+        trim_log_file(&path, 3, 10);
+
+        let content = fs::read_to_string(&path).unwrap();
+        assert_eq!(content.lines().count(), 5);
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_trim_log_file_over_threshold() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test-trim-over.log");
+        // Write 15 lines, threshold 10, keep 5
+        let mut f = fs::File::create(&path).unwrap();
+        for i in 0..15 {
+            writeln!(f, "line {i}").unwrap();
+        }
+        drop(f);
+
+        trim_log_file(&path, 5, 10);
+
+        let content = fs::read_to_string(&path).unwrap();
+        let lines: Vec<&str> = content.lines().collect();
+        assert_eq!(lines.len(), 5);
+        assert_eq!(lines[0], "line 10");
+        assert_eq!(lines[4], "line 14");
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_trim_log_file_nonexistent() {
+        let path = PathBuf::from("/tmp/nonexistent-trim-test-12345.log");
+        // Should not panic
+        trim_log_file(&path, 5, 10);
+    }
+}

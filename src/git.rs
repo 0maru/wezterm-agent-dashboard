@@ -178,6 +178,120 @@ fn fetch_pr_number(cwd: &str) -> Option<u32> {
 }
 
 // ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_normalize_remote_url_ssh_to_https() {
+        assert_eq!(
+            normalize_remote_url("git@github.com:user/repo.git"),
+            "https://github.com/user/repo"
+        );
+    }
+
+    #[test]
+    fn test_normalize_remote_url_ssh_no_git_suffix() {
+        assert_eq!(
+            normalize_remote_url("git@github.com:user/repo"),
+            "https://github.com/user/repo"
+        );
+    }
+
+    #[test]
+    fn test_normalize_remote_url_https_with_git_suffix() {
+        assert_eq!(
+            normalize_remote_url("https://github.com/user/repo.git"),
+            "https://github.com/user/repo"
+        );
+    }
+
+    #[test]
+    fn test_normalize_remote_url_https_no_suffix() {
+        assert_eq!(
+            normalize_remote_url("https://github.com/user/repo"),
+            "https://github.com/user/repo"
+        );
+    }
+
+    #[test]
+    fn test_parse_numstat_basic() {
+        let mut files = vec![
+            GitFileStatus { file: "src/main.rs".into(), insertions: 0, deletions: 0 },
+            GitFileStatus { file: "README.md".into(), insertions: 0, deletions: 0 },
+        ];
+        let mut total_ins = 0;
+        let mut total_del = 0;
+
+        parse_numstat("10\t3\tsrc/main.rs\n5\t1\tREADME.md", &mut files, &mut total_ins, &mut total_del);
+
+        assert_eq!(files[0].insertions, 10);
+        assert_eq!(files[0].deletions, 3);
+        assert_eq!(files[1].insertions, 5);
+        assert_eq!(files[1].deletions, 1);
+        assert_eq!(total_ins, 15);
+        assert_eq!(total_del, 4);
+    }
+
+    #[test]
+    fn test_parse_numstat_empty() {
+        let mut files = vec![];
+        let mut total_ins = 0;
+        let mut total_del = 0;
+
+        parse_numstat("", &mut files, &mut total_ins, &mut total_del);
+
+        assert_eq!(total_ins, 0);
+        assert_eq!(total_del, 0);
+    }
+
+    #[test]
+    fn test_parse_numstat_binary_file() {
+        let mut files = vec![
+            GitFileStatus { file: "image.png".into(), insertions: 0, deletions: 0 },
+        ];
+        let mut total_ins = 0;
+        let mut total_del = 0;
+
+        // Binary files show "-\t-\tfilename" in numstat
+        parse_numstat("-\t-\timage.png", &mut files, &mut total_ins, &mut total_del);
+
+        // "-" parses as 0 via unwrap_or(0)
+        assert_eq!(files[0].insertions, 0);
+        assert_eq!(files[0].deletions, 0);
+        assert_eq!(total_ins, 0);
+        assert_eq!(total_del, 0);
+    }
+
+    #[test]
+    fn test_parse_numstat_file_not_in_list() {
+        let mut files = vec![
+            GitFileStatus { file: "other.rs".into(), insertions: 0, deletions: 0 },
+        ];
+        let mut total_ins = 0;
+        let mut total_del = 0;
+
+        parse_numstat("5\t2\tunknown.rs", &mut files, &mut total_ins, &mut total_del);
+
+        // Totals are updated even if file is not in the list
+        assert_eq!(total_ins, 5);
+        assert_eq!(total_del, 2);
+        // The existing file should not be modified
+        assert_eq!(files[0].insertions, 0);
+    }
+
+    #[test]
+    fn test_fetch_git_data_empty_cwd() {
+        let data = fetch_git_data("");
+        assert!(data.branch.is_empty());
+        assert!(data.path.is_empty());
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Background polling thread
 // ---------------------------------------------------------------------------
 

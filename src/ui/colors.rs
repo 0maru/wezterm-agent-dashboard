@@ -84,3 +84,37 @@ impl ColorTheme {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::wezterm::{AgentType, PaneStatus, PermissionMode};
+    use ratatui::style::Color;
+
+    #[test]
+    fn test_status_color_all_variants() {
+        let theme = ColorTheme::default();
+        assert_eq!(theme.status_color(PaneStatus::Running), Color::Indexed(114));
+        assert_eq!(theme.status_color(PaneStatus::Waiting), Color::Indexed(221));
+        assert_eq!(theme.status_color(PaneStatus::Idle), Color::Indexed(109));
+        assert_eq!(theme.status_color(PaneStatus::Error), Color::Indexed(203));
+        assert_eq!(theme.status_color(PaneStatus::Unknown), theme.dimmed);
+    }
+
+    #[test]
+    fn test_agent_color() {
+        let theme = ColorTheme::default();
+        assert_eq!(theme.agent_color(AgentType::Claude), Color::Indexed(174));
+        assert_eq!(theme.agent_color(AgentType::Codex), Color::Indexed(141));
+    }
+
+    #[test]
+    fn test_badge_color_all_modes() {
+        let theme = ColorTheme::default();
+        assert_eq!(theme.badge_color(PermissionMode::Plan), theme.badge_plan);
+        assert_eq!(theme.badge_color(PermissionMode::AcceptEdits), theme.badge_edit);
+        assert_eq!(theme.badge_color(PermissionMode::Auto), theme.badge_auto);
+        assert_eq!(theme.badge_color(PermissionMode::BypassPermissions), theme.badge_bypass);
+        assert_eq!(theme.badge_color(PermissionMode::Default), theme.dimmed);
+    }
+}

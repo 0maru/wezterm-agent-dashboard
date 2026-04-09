@@ -255,4 +255,103 @@ mod tests {
         };
         assert_eq!(entry.tool_color_index(), 114);
     }
+
+    #[test]
+    fn test_tool_color_index_variants() {
+        let cases = vec![
+            ("Edit", 180), ("Write", 180),
+            ("Read", 110), ("Glob", 110), ("Grep", 110),
+            ("Agent", 181),
+            ("WebFetch", 117), ("WebSearch", 117),
+            ("TaskCreate", 223), ("TaskUpdate", 223),
+            ("Skill", 182),
+            ("AskUserQuestion", 216),
+            ("UnknownTool", 252),
+        ];
+        for (tool, expected) in cases {
+            let entry = ActivityEntry { timestamp: "".into(), tool: tool.into(), label: "".into() };
+            assert_eq!(entry.tool_color_index(), expected, "tool={tool}");
+        }
+    }
+
+    #[test]
+    fn test_task_progress_empty() {
+        let progress = TaskProgress::default();
+        assert!(progress.is_empty());
+        assert_eq!(progress.total_count(), 0);
+        assert_eq!(progress.completed_count(), 0);
+        assert!(!progress.all_completed()); // empty is not "all completed"
+        assert_eq!(progress.display(), "0/0");
+    }
+
+    #[test]
+    fn test_task_progress_all_completed() {
+        let progress = TaskProgress {
+            tasks: vec![
+                ("1".into(), TaskStatus::Completed),
+                ("2".into(), TaskStatus::Completed),
+            ],
+        };
+        assert!(progress.all_completed());
+        assert_eq!(progress.display(), "2/2");
+    }
+
+    #[test]
+    fn test_parse_task_progress_delete() {
+        let entries = vec![
+            ActivityEntry { timestamp: "14:32".into(), tool: "TaskUpdate".into(), label: "deleted #1".into() },
+            ActivityEntry { timestamp: "14:31".into(), tool: "TaskCreate".into(), label: "#1 Task one".into() },
+        ];
+        // Entries are newest-first, parse_task_progress reverses them
+        let progress = parse_task_progress(&entries);
+        assert_eq!(progress.total_count(), 0); // deleted
+    }
+
+    #[test]
+    fn test_parse_task_progress_status_update() {
+        let entries = vec![
+            ActivityEntry { timestamp: "14:33".into(), tool: "TaskUpdate".into(), label: "in_progress #2".into() },
+            ActivityEntry { timestamp: "14:32".into(), tool: "TaskCreate".into(), label: "#2 Second task".into() },
+            ActivityEntry { timestamp: "14:31".into(), tool: "TaskCreate".into(), label: "#1 First task".into() },
+        ];
+        let progress = parse_task_progress(&entries);
+        assert_eq!(progress.total_count(), 2);
+        assert_eq!(progress.tasks[0].1, TaskStatus::Pending); // #1
+        assert_eq!(progress.tasks[1].1, TaskStatus::InProgress); // #2
+    }
+
+    #[test]
+    fn test_extract_task_id_from_create_no_hash() {
+        assert_eq!(extract_task_id_from_create("Just a subject"), "");
+    }
+
+    #[test]
+    fn test_extract_task_id_from_create_with_hash() {
+        assert_eq!(extract_task_id_from_create("#42 Fix the bug"), "42");
+    }
+
+    #[test]
+    fn test_extract_status_and_id() {
+        let (status, id) = extract_status_and_id("completed #5");
+        assert_eq!(status, "completed");
+        assert_eq!(id, "5");
+    }
+
+    #[test]
+    fn test_extract_status_and_id_no_space() {
+        let (status, id) = extract_status_and_id("completed");
+        assert_eq!(status, "");
+        assert_eq!(id, "");
+    }
+
+    #[test]
+    fn test_parse_activity_line_missing_fields() {
+        assert!(parse_activity_line("only_one_field").is_none());
+    }
+
+    #[test]
+    fn test_log_file_path() {
+        let path = log_file_path(123);
+        assert_eq!(path.to_str().unwrap(), "/tmp/wezterm-agent-activity-123.log");
+    }
 }

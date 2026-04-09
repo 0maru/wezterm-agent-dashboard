@@ -1,7 +1,7 @@
 use std::process::Command;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
-use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
@@ -54,7 +54,10 @@ pub fn fetch_git_data(cwd: &str) -> GitData {
     }
 
     // Ahead/behind
-    if let Some(ab) = git_cmd(cwd, &["rev-list", "--left-right", "--count", "HEAD...@{upstream}"]) {
+    if let Some(ab) = git_cmd(
+        cwd,
+        &["rev-list", "--left-right", "--count", "HEAD...@{upstream}"],
+    ) {
         let parts: Vec<&str> = ab.split_whitespace().collect();
         if parts.len() == 2 {
             data.ahead = parts[0].parse().unwrap_or(0);
@@ -96,12 +99,22 @@ pub fn fetch_git_data(cwd: &str) -> GitData {
 
     // Staged diff stats
     if let Some(numstat) = git_cmd(cwd, &["diff", "--cached", "--numstat"]) {
-        parse_numstat(&numstat, &mut data.staged_files, &mut data.staged_insertions, &mut data.staged_deletions);
+        parse_numstat(
+            &numstat,
+            &mut data.staged_files,
+            &mut data.staged_insertions,
+            &mut data.staged_deletions,
+        );
     }
 
     // Unstaged diff stats
     if let Some(numstat) = git_cmd(cwd, &["diff", "--numstat"]) {
-        parse_numstat(&numstat, &mut data.unstaged_files, &mut data.unstaged_insertions, &mut data.unstaged_deletions);
+        parse_numstat(
+            &numstat,
+            &mut data.unstaged_files,
+            &mut data.unstaged_insertions,
+            &mut data.unstaged_deletions,
+        );
     }
 
     // Remote URL
@@ -220,13 +233,26 @@ mod tests {
     #[test]
     fn test_parse_numstat_basic() {
         let mut files = vec![
-            GitFileStatus { file: "src/main.rs".into(), insertions: 0, deletions: 0 },
-            GitFileStatus { file: "README.md".into(), insertions: 0, deletions: 0 },
+            GitFileStatus {
+                file: "src/main.rs".into(),
+                insertions: 0,
+                deletions: 0,
+            },
+            GitFileStatus {
+                file: "README.md".into(),
+                insertions: 0,
+                deletions: 0,
+            },
         ];
         let mut total_ins = 0;
         let mut total_del = 0;
 
-        parse_numstat("10\t3\tsrc/main.rs\n5\t1\tREADME.md", &mut files, &mut total_ins, &mut total_del);
+        parse_numstat(
+            "10\t3\tsrc/main.rs\n5\t1\tREADME.md",
+            &mut files,
+            &mut total_ins,
+            &mut total_del,
+        );
 
         assert_eq!(files[0].insertions, 10);
         assert_eq!(files[0].deletions, 3);
@@ -250,14 +276,21 @@ mod tests {
 
     #[test]
     fn test_parse_numstat_binary_file() {
-        let mut files = vec![
-            GitFileStatus { file: "image.png".into(), insertions: 0, deletions: 0 },
-        ];
+        let mut files = vec![GitFileStatus {
+            file: "image.png".into(),
+            insertions: 0,
+            deletions: 0,
+        }];
         let mut total_ins = 0;
         let mut total_del = 0;
 
         // Binary files show "-\t-\tfilename" in numstat
-        parse_numstat("-\t-\timage.png", &mut files, &mut total_ins, &mut total_del);
+        parse_numstat(
+            "-\t-\timage.png",
+            &mut files,
+            &mut total_ins,
+            &mut total_del,
+        );
 
         // "-" parses as 0 via unwrap_or(0)
         assert_eq!(files[0].insertions, 0);
@@ -268,13 +301,20 @@ mod tests {
 
     #[test]
     fn test_parse_numstat_file_not_in_list() {
-        let mut files = vec![
-            GitFileStatus { file: "other.rs".into(), insertions: 0, deletions: 0 },
-        ];
+        let mut files = vec![GitFileStatus {
+            file: "other.rs".into(),
+            insertions: 0,
+            deletions: 0,
+        }];
         let mut total_ins = 0;
         let mut total_del = 0;
 
-        parse_numstat("5\t2\tunknown.rs", &mut files, &mut total_ins, &mut total_del);
+        parse_numstat(
+            "5\t2\tunknown.rs",
+            &mut files,
+            &mut total_ins,
+            &mut total_del,
+        );
 
         // Totals are updated even if file is not in the list
         assert_eq!(total_ins, 5);
@@ -299,7 +339,11 @@ mod tests {
 /// Only polls when `active` flag is true (git tab visible).
 pub fn start_git_poll_thread(
     active: Arc<AtomicBool>,
-) -> (mpsc::Receiver<GitData>, Arc<AtomicBool>, thread::JoinHandle<()>) {
+) -> (
+    mpsc::Receiver<GitData>,
+    Arc<AtomicBool>,
+    thread::JoinHandle<()>,
+) {
     let (tx, rx) = mpsc::channel();
     let shutdown = Arc::new(AtomicBool::new(false));
     let shutdown_clone = shutdown.clone();

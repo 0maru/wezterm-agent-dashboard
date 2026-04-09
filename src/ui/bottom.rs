@@ -33,7 +33,10 @@ impl Widget for BottomTabLabel<'_> {
 
         for (i, (tab, label)) in tabs.iter().enumerate() {
             if i > 0 {
-                spans.push(Span::styled(" │ ", Style::default().fg(self.state.theme.inactive_border)));
+                spans.push(Span::styled(
+                    " │ ",
+                    Style::default().fg(self.state.theme.inactive_border),
+                ));
             }
 
             let is_active = self.state.bottom_tab == *tab;
@@ -145,7 +148,12 @@ impl Widget for GitPanel<'_> {
         if y < max_y {
             let mut spans = vec![
                 Span::styled("  ", Style::default()),
-                Span::styled(&git.branch, Style::default().fg(self.state.theme.branch).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    &git.branch,
+                    Style::default()
+                        .fg(self.state.theme.branch)
+                        .add_modifier(Modifier::BOLD),
+                ),
             ];
 
             if git.ahead > 0 || git.behind > 0 {
@@ -185,7 +193,7 @@ impl Widget for GitPanel<'_> {
             buf.set_string(
                 area.x + 1,
                 y,
-                &format!(
+                format!(
                     "Staged ({}) +{} -{}",
                     git.staged_files.len(),
                     git.staged_insertions,
@@ -216,7 +224,7 @@ impl Widget for GitPanel<'_> {
             buf.set_string(
                 area.x + 1,
                 y,
-                &format!(
+                format!(
                     "Unstaged ({}) +{} -{}",
                     git.unstaged_files.len(),
                     git.unstaged_insertions,
@@ -247,7 +255,7 @@ impl Widget for GitPanel<'_> {
             buf.set_string(
                 area.x + 1,
                 y,
-                &format!("Untracked ({})", git.untracked_files.len()),
+                format!("Untracked ({})", git.untracked_files.len()),
                 Style::default().fg(self.state.theme.dimmed),
             );
             y += 1;

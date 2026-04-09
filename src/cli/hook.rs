@@ -1,5 +1,5 @@
-use crate::cli::{json_str, local_time_hhmm, read_stdin_json, sanitize_value};
 use crate::cli::label::extract_tool_label;
+use crate::cli::{json_str, local_time_hhmm, read_stdin_json, sanitize_value};
 use crate::user_vars;
 use serde_json::Value;
 use std::fs::{self, OpenOptions};
@@ -140,10 +140,7 @@ fn handle_stop_failure(agent: &str, input: &Value) {
 
 fn handle_session_start(agent: &str) {
     user_vars::clear_user_vars(ALL_AGENT_VARS);
-    user_vars::set_user_vars(&[
-        ("agent_type", agent),
-        ("agent_status", "idle"),
-    ]);
+    user_vars::set_user_vars(&[("agent_type", agent), ("agent_status", "idle")]);
 }
 
 fn handle_session_end(pane_id: &str) {
@@ -242,9 +239,7 @@ fn update_cwd_and_mode(agent: &str, input: &Value) {
 }
 
 fn is_system_message(prompt: &str) -> bool {
-    prompt.starts_with("/")
-        || prompt.starts_with("CTRL-")
-        || prompt.len() < 2
+    prompt.starts_with("/") || prompt.starts_with("CTRL-") || prompt.len() < 2
 }
 
 fn current_epoch() -> u64 {
@@ -270,7 +265,7 @@ fn write_activity_entry(pane_id: &str, tool_name: &str, label: &str) {
     };
 
     // Replace newlines and pipes in label
-    let label = label.replace('\n', " ").replace('|', " ");
+    let label = label.replace(['\n', '|'], " ");
 
     let entry = format!("{hhmm}|{tool_name}|{label}\n");
 

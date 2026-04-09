@@ -16,17 +16,17 @@ impl ActivityEntry {
     /// Map tool names to 256-color indices for display.
     pub fn tool_color_index(&self) -> u8 {
         match self.tool.as_str() {
-            "Edit" | "Write" => 180,                          // soft yellow
-            "Bash" => 114,                                     // soft green
-            "Read" | "Glob" | "Grep" => 110,                  // soft blue
-            "Agent" => 181,                                    // soft pink
-            "WebFetch" | "WebSearch" => 117,                   // soft cyan
+            "Edit" | "Write" => 180,         // soft yellow
+            "Bash" => 114,                   // soft green
+            "Read" | "Glob" | "Grep" => 110, // soft blue
+            "Agent" => 181,                  // soft pink
+            "WebFetch" | "WebSearch" => 117, // soft cyan
             "TaskCreate" | "TaskUpdate" | "TaskGet" | "TaskStop" | "TaskOutput" => 223, // soft gold
-            "Skill" => 182,                                    // light purple
-            "AskUserQuestion" => 216,                          // soft orange
-            "SendMessage" | "TeamCreate" => 151,               // muted green
-            "LSP" => 146,                                      // light lavender
-            _ => 252,                                          // light gray
+            "Skill" => 182,                  // light purple
+            "AskUserQuestion" => 216,        // soft orange
+            "SendMessage" | "TeamCreate" => 151, // muted green
+            "LSP" => 146,                    // light lavender
+            _ => 252,                        // light gray
         }
     }
 }
@@ -259,17 +259,26 @@ mod tests {
     #[test]
     fn test_tool_color_index_variants() {
         let cases = vec![
-            ("Edit", 180), ("Write", 180),
-            ("Read", 110), ("Glob", 110), ("Grep", 110),
+            ("Edit", 180),
+            ("Write", 180),
+            ("Read", 110),
+            ("Glob", 110),
+            ("Grep", 110),
             ("Agent", 181),
-            ("WebFetch", 117), ("WebSearch", 117),
-            ("TaskCreate", 223), ("TaskUpdate", 223),
+            ("WebFetch", 117),
+            ("WebSearch", 117),
+            ("TaskCreate", 223),
+            ("TaskUpdate", 223),
             ("Skill", 182),
             ("AskUserQuestion", 216),
             ("UnknownTool", 252),
         ];
         for (tool, expected) in cases {
-            let entry = ActivityEntry { timestamp: "".into(), tool: tool.into(), label: "".into() };
+            let entry = ActivityEntry {
+                timestamp: "".into(),
+                tool: tool.into(),
+                label: "".into(),
+            };
             assert_eq!(entry.tool_color_index(), expected, "tool={tool}");
         }
     }
@@ -299,8 +308,16 @@ mod tests {
     #[test]
     fn test_parse_task_progress_delete() {
         let entries = vec![
-            ActivityEntry { timestamp: "14:32".into(), tool: "TaskUpdate".into(), label: "deleted #1".into() },
-            ActivityEntry { timestamp: "14:31".into(), tool: "TaskCreate".into(), label: "#1 Task one".into() },
+            ActivityEntry {
+                timestamp: "14:32".into(),
+                tool: "TaskUpdate".into(),
+                label: "deleted #1".into(),
+            },
+            ActivityEntry {
+                timestamp: "14:31".into(),
+                tool: "TaskCreate".into(),
+                label: "#1 Task one".into(),
+            },
         ];
         // Entries are newest-first, parse_task_progress reverses them
         let progress = parse_task_progress(&entries);
@@ -310,9 +327,21 @@ mod tests {
     #[test]
     fn test_parse_task_progress_status_update() {
         let entries = vec![
-            ActivityEntry { timestamp: "14:33".into(), tool: "TaskUpdate".into(), label: "in_progress #2".into() },
-            ActivityEntry { timestamp: "14:32".into(), tool: "TaskCreate".into(), label: "#2 Second task".into() },
-            ActivityEntry { timestamp: "14:31".into(), tool: "TaskCreate".into(), label: "#1 First task".into() },
+            ActivityEntry {
+                timestamp: "14:33".into(),
+                tool: "TaskUpdate".into(),
+                label: "in_progress #2".into(),
+            },
+            ActivityEntry {
+                timestamp: "14:32".into(),
+                tool: "TaskCreate".into(),
+                label: "#2 Second task".into(),
+            },
+            ActivityEntry {
+                timestamp: "14:31".into(),
+                tool: "TaskCreate".into(),
+                label: "#1 First task".into(),
+            },
         ];
         let progress = parse_task_progress(&entries);
         assert_eq!(progress.total_count(), 2);
@@ -352,6 +381,9 @@ mod tests {
     #[test]
     fn test_log_file_path() {
         let path = log_file_path(123);
-        assert_eq!(path.to_str().unwrap(), "/tmp/wezterm-agent-activity-123.log");
+        assert_eq!(
+            path.to_str().unwrap(),
+            "/tmp/wezterm-agent-activity-123.log"
+        );
     }
 }

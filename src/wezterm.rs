@@ -18,6 +18,7 @@ pub enum PaneStatus {
 }
 
 impl PaneStatus {
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
         match s {
             "running" => Self::Running,
@@ -56,6 +57,7 @@ pub enum AgentType {
 }
 
 impl AgentType {
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "claude" => Some(Self::Claude),
@@ -88,6 +90,7 @@ pub enum PermissionMode {
 }
 
 impl PermissionMode {
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
         match s {
             "plan" => Self::Plan,
@@ -223,7 +226,11 @@ pub fn build_workspaces(
         }
 
         // Skip non-agent panes (pane_role = "dashboard" or no agent_type)
-        if raw.user_vars.get("pane_role").is_some_and(|r| r == "dashboard") {
+        if raw
+            .user_vars
+            .get("pane_role")
+            .is_some_and(|r| r == "dashboard")
+        {
             continue;
         }
 
@@ -232,9 +239,7 @@ pub fn build_workspaces(
             None => continue,
         };
 
-        let workspace = workspaces
-            .entry(raw.workspace.clone())
-            .or_default();
+        let workspace = workspaces.entry(raw.workspace.clone()).or_default();
 
         let tab = workspace.entry(raw.tab_id).or_insert_with(|| TabInfo {
             tab_id: raw.tab_id,
@@ -277,7 +282,7 @@ fn parse_pane_info(
     let attention = raw
         .user_vars
         .get("agent_attention")
-        .is_some_and(|s| !s.is_empty() && s != "");
+        .is_some_and(|s| !s.is_empty());
 
     // Resolve CWD: prefer agent_cwd user var, fallback to pane cwd
     let pane_cwd = raw.cwd.strip_prefix("file://").unwrap_or(&raw.cwd);
@@ -382,10 +387,7 @@ fn hex_byte(b: u8) -> u8 {
 fn detect_codex_modes() -> HashMap<u32, PermissionMode> {
     let mut modes = HashMap::new();
 
-    let output = Command::new("ps")
-        .args(["-eo", "pid,args"])
-        .output()
-        .ok();
+    let output = Command::new("ps").args(["-eo", "pid,args"]).output().ok();
 
     let output = match output {
         Some(o) if o.status.success() => o,
@@ -483,10 +485,7 @@ pub fn kill_pane(pane_id: u64) {
 }
 
 /// Find the currently focused pane's ID (the active pane in the active tab).
-pub fn find_focused_pane(
-    workspaces: &[WorkspaceInfo],
-    dashboard_pane_id: u64,
-) -> Option<u64> {
+pub fn find_focused_pane(workspaces: &[WorkspaceInfo], dashboard_pane_id: u64) -> Option<u64> {
     for ws in workspaces {
         for tab in &ws.tabs {
             for pane in &tab.panes {
@@ -588,9 +587,15 @@ mod tests {
     #[test]
     fn test_permission_mode_from_str() {
         assert_eq!(PermissionMode::from_str("plan"), PermissionMode::Plan);
-        assert_eq!(PermissionMode::from_str("acceptEdits"), PermissionMode::AcceptEdits);
+        assert_eq!(
+            PermissionMode::from_str("acceptEdits"),
+            PermissionMode::AcceptEdits
+        );
         assert_eq!(PermissionMode::from_str("auto"), PermissionMode::Auto);
-        assert_eq!(PermissionMode::from_str("bypassPermissions"), PermissionMode::BypassPermissions);
+        assert_eq!(
+            PermissionMode::from_str("bypassPermissions"),
+            PermissionMode::BypassPermissions
+        );
         assert_eq!(PermissionMode::from_str("default"), PermissionMode::Default);
         assert_eq!(PermissionMode::from_str("unknown"), PermissionMode::Default);
         assert_eq!(PermissionMode::from_str(""), PermissionMode::Default);

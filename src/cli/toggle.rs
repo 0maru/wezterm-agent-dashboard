@@ -4,10 +4,7 @@ use crate::wezterm;
 /// If a dashboard pane exists in the current tab, kill it.
 /// Otherwise, create a new one by splitting the current pane.
 pub fn cmd_toggle(args: &[String]) -> i32 {
-    let sidebar_percent: u8 = args
-        .first()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(20);
+    let sidebar_percent: u8 = args.first().and_then(|s| s.parse().ok()).unwrap_or(20);
 
     let raw_panes = wezterm::query_all_panes();
 

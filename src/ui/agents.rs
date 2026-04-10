@@ -1,8 +1,8 @@
+use crate::SPINNER_ICON;
+use crate::SPINNER_PULSE;
 use crate::state::{AgentFilter, AppState, Focus, RepoFilter};
 use crate::ui::text;
 use crate::wezterm::PaneStatus;
-use crate::SPINNER_ICON;
-use crate::SPINNER_PULSE;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
@@ -29,10 +29,30 @@ impl Widget for FilterBar<'_> {
 
         let items: Vec<(AgentFilter, &str, usize, Color)> = vec![
             (AgentFilter::All, "All", all, Color::White),
-            (AgentFilter::Running, PaneStatus::Running.icon(), running, self.state.theme.running),
-            (AgentFilter::Waiting, PaneStatus::Waiting.icon(), waiting, self.state.theme.waiting),
-            (AgentFilter::Idle, PaneStatus::Idle.icon(), idle, self.state.theme.idle),
-            (AgentFilter::Error, PaneStatus::Error.icon(), error, self.state.theme.error),
+            (
+                AgentFilter::Running,
+                PaneStatus::Running.icon(),
+                running,
+                self.state.theme.running,
+            ),
+            (
+                AgentFilter::Waiting,
+                PaneStatus::Waiting.icon(),
+                waiting,
+                self.state.theme.waiting,
+            ),
+            (
+                AgentFilter::Idle,
+                PaneStatus::Idle.icon(),
+                idle,
+                self.state.theme.idle,
+            ),
+            (
+                AgentFilter::Error,
+                PaneStatus::Error.icon(),
+                error,
+                self.state.theme.error,
+            ),
         ];
 
         let mut spans = Vec::new();
@@ -43,7 +63,9 @@ impl Widget for FilterBar<'_> {
 
             let is_active = filter == af;
             let style = if is_active && focused {
-                Style::default().fg(*color).add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+                Style::default()
+                    .fg(*color)
+                    .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
             } else if is_active {
                 Style::default().fg(*color).add_modifier(Modifier::BOLD)
             } else {
@@ -86,10 +108,10 @@ impl Widget for AgentList<'_> {
         let max_y = area.y + area.height;
 
         for (group_idx, group) in self.state.repo_groups.iter().enumerate() {
-            if let RepoFilter::Repo(ref name) = self.state.repo_filter {
-                if group.name != *name {
-                    continue;
-                }
+            if let RepoFilter::Repo(ref name) = self.state.repo_filter
+                && group.name != *name
+            {
+                continue;
             }
 
             // Group header
@@ -102,15 +124,11 @@ impl Widget for AgentList<'_> {
 
                 let header = format!("─ {} ", group.name);
                 let header = text::truncate(&header, width);
-                let remaining = width.saturating_sub(unicode_width::UnicodeWidthStr::width(header.as_str()));
+                let remaining =
+                    width.saturating_sub(unicode_width::UnicodeWidthStr::width(header.as_str()));
                 let line_str = format!("{header}{}", "─".repeat(remaining));
 
-                buf.set_string(
-                    area.x,
-                    y,
-                    &line_str,
-                    Style::default().fg(border_color),
-                );
+                buf.set_string(area.x, y, &line_str, Style::default().fg(border_color));
                 y += 1;
             }
 
@@ -157,7 +175,9 @@ impl Widget for AgentList<'_> {
                 let agent_color = self.state.theme.agent_color(pane.agent);
                 spans.push(Span::styled(
                     pane.agent.as_str(),
-                    Style::default().fg(agent_color).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(agent_color)
+                        .add_modifier(Modifier::BOLD),
                 ));
 
                 // Permission badge
@@ -168,14 +188,14 @@ impl Widget for AgentList<'_> {
                 }
 
                 // Task progress
-                if let Some(progress) = self.state.pane_task_progress.get(&pane.pane_id) {
-                    if !progress.is_empty() {
-                        spans.push(Span::raw("  "));
-                        spans.push(Span::styled(
-                            progress.display(),
-                            Style::default().fg(self.state.theme.dimmed),
-                        ));
-                    }
+                if let Some(progress) = self.state.pane_task_progress.get(&pane.pane_id)
+                    && !progress.is_empty()
+                {
+                    spans.push(Span::raw("  "));
+                    spans.push(Span::styled(
+                        progress.display(),
+                        Style::default().fg(self.state.theme.dimmed),
+                    ));
                 }
 
                 // Elapsed time
@@ -261,23 +281,23 @@ impl Widget for AgentList<'_> {
                 }
 
                 // Git branch (if available)
-                if let Some(branch) = &git_info.branch {
-                    if y < max_y {
-                        let branch_text = if git_info.is_worktree {
-                            format!("  🌿 {branch} (worktree)")
-                        } else {
-                            format!("  🌿 {branch}")
-                        };
-                        let truncated = text::truncate(&branch_text, width);
+                if let Some(branch) = &git_info.branch
+                    && y < max_y
+                {
+                    let branch_text = if git_info.is_worktree {
+                        format!("  🌿 {branch} (worktree)")
+                    } else {
+                        format!("  🌿 {branch}")
+                    };
+                    let truncated = text::truncate(&branch_text, width);
 
-                        buf.set_string(
-                            area.x,
-                            y,
-                            &truncated,
-                            Style::default().fg(self.state.theme.branch),
-                        );
-                        y += 1;
-                    }
+                    buf.set_string(
+                        area.x,
+                        y,
+                        &truncated,
+                        Style::default().fg(self.state.theme.branch),
+                    );
+                    y += 1;
                 }
             }
 

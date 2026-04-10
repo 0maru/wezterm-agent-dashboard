@@ -77,10 +77,10 @@ pub fn extract_tool_label(tool_name: &str, tool_input: &Value, tool_response: &V
 
         "AskUserQuestion" => {
             // Extract first question text
-            if let Some(questions) = tool_input.get("questions").and_then(|q| q.as_array()) {
-                if let Some(first) = questions.first() {
-                    return json_str(first, "question").to_string();
-                }
+            if let Some(questions) = tool_input.get("questions").and_then(|q| q.as_array())
+                && let Some(first) = questions.first()
+            {
+                return json_str(first, "question").to_string();
             }
             String::new()
         }
@@ -96,10 +96,7 @@ pub fn extract_tool_label(tool_name: &str, tool_input: &Value, tool_response: &V
 }
 
 fn json_str<'a>(value: &'a Value, key: &str) -> &'a str {
-    value
-        .get(key)
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
+    value.get(key).and_then(|v| v.as_str()).unwrap_or("")
 }
 
 #[cfg(test)]
@@ -110,10 +107,7 @@ mod tests {
     #[test]
     fn test_read_label() {
         let input = json!({"file_path": "/home/user/project/src/main.rs"});
-        assert_eq!(
-            extract_tool_label("Read", &input, &Value::Null),
-            "main.rs"
-        );
+        assert_eq!(extract_tool_label("Read", &input, &Value::Null), "main.rs");
     }
 
     #[test]
@@ -128,10 +122,7 @@ mod tests {
     #[test]
     fn test_grep_label() {
         let input = json!({"pattern": "fn main"});
-        assert_eq!(
-            extract_tool_label("Grep", &input, &Value::Null),
-            "fn main"
-        );
+        assert_eq!(extract_tool_label("Grep", &input, &Value::Null), "fn main");
     }
 
     #[test]
@@ -227,10 +218,7 @@ mod tests {
     #[test]
     fn test_skill_label() {
         let input = json!({"skill": "commit"});
-        assert_eq!(
-            extract_tool_label("Skill", &input, &Value::Null),
-            "commit"
-        );
+        assert_eq!(extract_tool_label("Skill", &input, &Value::Null), "commit");
     }
 
     #[test]
@@ -255,10 +243,7 @@ mod tests {
     #[test]
     fn test_task_get_label() {
         let input = json!({"taskId": "7"});
-        assert_eq!(
-            extract_tool_label("TaskGet", &input, &Value::Null),
-            "#7"
-        );
+        assert_eq!(extract_tool_label("TaskGet", &input, &Value::Null), "#7");
     }
 
     #[test]
@@ -282,9 +267,6 @@ mod tests {
     #[test]
     fn test_glob_label() {
         let input = json!({"pattern": "**/*.rs"});
-        assert_eq!(
-            extract_tool_label("Glob", &input, &Value::Null),
-            "**/*.rs"
-        );
+        assert_eq!(extract_tool_label("Glob", &input, &Value::Null), "**/*.rs");
     }
 }

@@ -43,10 +43,7 @@ pub fn read_stdin_json() -> serde_json::Value {
 
 /// Safely extract a string field from a JSON value.
 pub fn json_str<'a>(value: &'a serde_json::Value, key: &str) -> &'a str {
-    value
-        .get(key)
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
+    value.get(key).and_then(|v| v.as_str()).unwrap_or("")
 }
 
 /// Get local time as HH:MM string.
@@ -60,14 +57,11 @@ pub fn local_time_hhmm() -> String {
 
     // Get local timezone offset using libc-free approach
     // We parse the output of `date +%H:%M` for simplicity and portability
-    if let Ok(output) = std::process::Command::new("date")
-        .arg("+%H:%M")
-        .output()
+    if let Ok(output) = std::process::Command::new("date").arg("+%H:%M").output()
+        && output.status.success()
     {
-        if output.status.success() {
-            let s = String::from_utf8_lossy(&output.stdout);
-            return s.trim().to_string();
-        }
+        let s = String::from_utf8_lossy(&output.stdout);
+        return s.trim().to_string();
     }
 
     // Fallback: UTC
@@ -78,9 +72,7 @@ pub fn local_time_hhmm() -> String {
 
 /// Sanitize a string value for storage: replace newlines and pipes with spaces.
 pub fn sanitize_value(s: &str) -> String {
-    s.replace('\n', " ")
-        .replace('\r', " ")
-        .replace('|', " ")
+    s.replace(['\n', '\r', '|'], " ")
 }
 
 #[cfg(test)]

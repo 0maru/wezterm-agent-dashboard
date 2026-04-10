@@ -42,9 +42,9 @@ impl Widget for Dashboard<'_> {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(1),                         // filter bar
-                Constraint::Min(3),                           // agent list
-                Constraint::Length(1),                         // tab label
+                Constraint::Length(1),                               // filter bar
+                Constraint::Min(3),                                  // agent list
+                Constraint::Length(1),                               // tab label
                 Constraint::Length(bottom_height.saturating_sub(1)), // bottom panel
             ])
             .split(area);

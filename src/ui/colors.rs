@@ -29,15 +29,15 @@ pub struct ColorTheme {
 impl Default for ColorTheme {
     fn default() -> Self {
         Self {
-            running: Color::Indexed(114),    // green
-            waiting: Color::Indexed(221),    // yellow
-            idle: Color::Indexed(109),       // teal
-            error: Color::Indexed(203),      // red
-            claude: Color::Indexed(174),     // terracotta
-            codex: Color::Indexed(141),      // purple
+            running: Color::Indexed(114),         // green
+            waiting: Color::Indexed(221),         // yellow
+            idle: Color::Indexed(109),            // teal
+            error: Color::Indexed(203),           // red
+            claude: Color::Indexed(174),          // terracotta
+            codex: Color::Indexed(141),           // purple
             active_border: Color::Indexed(117),   // cyan
             inactive_border: Color::Indexed(240), // dark gray
-            dimmed: Color::Indexed(245),     // medium gray
+            dimmed: Color::Indexed(245),          // medium gray
             filter_active: Color::White,
             filter_inactive: Color::Indexed(245),
             prompt_text: Color::Indexed(252),
@@ -47,8 +47,8 @@ impl Default for ColorTheme {
             badge_auto: Color::Indexed(221),   // yellow
             badge_bypass: Color::Indexed(203), // red
             subagent: Color::Indexed(245),
-            wait_reason: Color::Indexed(221),  // yellow
-            branch: Color::Indexed(117),       // cyan
+            wait_reason: Color::Indexed(221), // yellow
+            branch: Color::Indexed(117),      // cyan
         }
     }
 }
@@ -112,9 +112,15 @@ mod tests {
     fn test_badge_color_all_modes() {
         let theme = ColorTheme::default();
         assert_eq!(theme.badge_color(PermissionMode::Plan), theme.badge_plan);
-        assert_eq!(theme.badge_color(PermissionMode::AcceptEdits), theme.badge_edit);
+        assert_eq!(
+            theme.badge_color(PermissionMode::AcceptEdits),
+            theme.badge_edit
+        );
         assert_eq!(theme.badge_color(PermissionMode::Auto), theme.badge_auto);
-        assert_eq!(theme.badge_color(PermissionMode::BypassPermissions), theme.badge_bypass);
+        assert_eq!(
+            theme.badge_color(PermissionMode::BypassPermissions),
+            theme.badge_bypass
+        );
         assert_eq!(theme.badge_color(PermissionMode::Default), theme.dimmed);
     }
 }

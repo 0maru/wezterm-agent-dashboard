@@ -54,7 +54,7 @@ pub fn resolve_pane_git_info(path: &str) -> PaneGitInfo {
                 repo_root: None,
                 branch: None,
                 is_worktree: false,
-            }
+            };
         }
     };
 
@@ -85,10 +85,7 @@ pub fn resolve_pane_git_info(path: &str) -> PaneGitInfo {
         .join(git_common_dir)
         .canonicalize()
         .ok();
-    let dir_canonical = std::path::Path::new(path)
-        .join(git_dir)
-        .canonicalize()
-        .ok();
+    let dir_canonical = std::path::Path::new(path).join(git_dir).canonicalize().ok();
     let is_worktree = match (common_canonical, dir_canonical) {
         (Some(c), Some(d)) => c != d,
         _ => false,
@@ -144,10 +141,14 @@ pub fn group_panes_by_repo(
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_else(|| key.clone());
 
-            let has_focus = focused_pane_id
-                .is_some_and(|fid| panes.iter().any(|(p, _)| p.pane_id == fid));
+            let has_focus =
+                focused_pane_id.is_some_and(|fid| panes.iter().any(|(p, _)| p.pane_id == fid));
 
-            RepoGroup { name, has_focus, panes }
+            RepoGroup {
+                name,
+                has_focus,
+                panes,
+            }
         })
         .collect()
 }

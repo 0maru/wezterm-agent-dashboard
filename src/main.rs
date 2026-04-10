@@ -1,11 +1,11 @@
 use crossterm::event::{self, Event, KeyCode, KeyModifiers, MouseEventKind};
 use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::{cursor, execute};
-use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
+use ratatui::backend::CrosstermBackend;
 use std::io;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use wezterm_agent_dashboard::git;
 use wezterm_agent_dashboard::state::{AppState, BottomTab, Focus, RepoFilter};
@@ -121,16 +121,12 @@ fn run_app(
                         // Bottom tab toggle
                         (KeyCode::BackTab, _) => {
                             state.bottom_tab = state.bottom_tab.toggle();
-                            git_active.store(
-                                state.bottom_tab == BottomTab::GitStatus,
-                                Ordering::Relaxed,
-                            );
+                            git_active
+                                .store(state.bottom_tab == BottomTab::GitStatus, Ordering::Relaxed);
                         }
 
                         // Filter navigation (when filter is focused)
-                        (KeyCode::Char('h') | KeyCode::Left, _)
-                            if state.focus == Focus::Filter =>
-                        {
+                        (KeyCode::Char('h') | KeyCode::Left, _) if state.focus == Focus::Filter => {
                             state.agent_filter = state.agent_filter.prev();
                             state.refresh();
                         }
@@ -142,14 +138,10 @@ fn run_app(
                         }
 
                         // Agent list navigation
-                        (KeyCode::Char('j') | KeyCode::Down, _)
-                            if state.focus == Focus::Agents =>
-                        {
+                        (KeyCode::Char('j') | KeyCode::Down, _) if state.focus == Focus::Agents => {
                             state.select_next();
                         }
-                        (KeyCode::Char('k') | KeyCode::Up, _)
-                            if state.focus == Focus::Agents =>
-                        {
+                        (KeyCode::Char('k') | KeyCode::Up, _) if state.focus == Focus::Agents => {
                             state.select_prev();
                         }
 
@@ -160,8 +152,7 @@ fn run_app(
                                 let names = state.repo_names();
                                 if state.repo_popup_selected == 0 {
                                     state.repo_filter = RepoFilter::All;
-                                } else if let Some(name) =
-                                    names.get(state.repo_popup_selected - 1)
+                                } else if let Some(name) = names.get(state.repo_popup_selected - 1)
                                 {
                                     state.repo_filter = RepoFilter::Repo(name.clone());
                                 }

@@ -216,11 +216,11 @@ impl AppState {
 
         // Find focused pane
         let new_focused = wezterm::find_focused_pane(&self.workspaces, self.dashboard_pane_id);
-        if let Some(fid) = new_focused {
-            if self.focused_pane_id != Some(fid) {
-                self.prev_focused_pane_id = self.focused_pane_id;
-                self.focused_pane_id = Some(fid);
-            }
+        if let Some(fid) = new_focused
+            && self.focused_pane_id != Some(fid)
+        {
+            self.prev_focused_pane_id = self.focused_pane_id;
+            self.focused_pane_id = Some(fid);
         }
 
         // Group panes by repo
@@ -242,19 +242,19 @@ impl AppState {
     /// Rebuild the flat list of selectable agent rows from groups.
     fn rebuild_row_targets(&mut self) {
         // Validate repo filter
-        if let RepoFilter::Repo(ref name) = self.repo_filter {
-            if !self.repo_groups.iter().any(|g| g.name == *name) {
-                self.repo_filter = RepoFilter::All;
-            }
+        if let RepoFilter::Repo(ref name) = self.repo_filter
+            && !self.repo_groups.iter().any(|g| g.name == *name)
+        {
+            self.repo_filter = RepoFilter::All;
         }
 
         self.agent_row_targets.clear();
 
         for group in &self.repo_groups {
-            if let RepoFilter::Repo(ref name) = self.repo_filter {
-                if group.name != *name {
-                    continue;
-                }
+            if let RepoFilter::Repo(ref name) = self.repo_filter
+                && group.name != *name
+            {
+                continue;
             }
 
             for (pane, _git_info) in &group.panes {
@@ -308,7 +308,8 @@ impl AppState {
         }
 
         // Clean up stale entries
-        self.pane_task_progress.retain(|id, _| active_panes.contains(id));
+        self.pane_task_progress
+            .retain(|id, _| active_panes.contains(id));
     }
 
     fn write_git_path(&self) {
@@ -317,10 +318,7 @@ impl AppState {
             for group in &self.repo_groups {
                 for (pane, _) in &group.panes {
                     if pane.pane_id == pane_id {
-                        let _ = std::fs::write(
-                            "/tmp/wezterm-agent-dashboard-git-path",
-                            &pane.path,
-                        );
+                        let _ = std::fs::write("/tmp/wezterm-agent-dashboard-git-path", &pane.path);
                         return;
                     }
                 }
@@ -337,10 +335,10 @@ impl AppState {
         let mut error = 0;
 
         for group in &self.repo_groups {
-            if let RepoFilter::Repo(ref name) = self.repo_filter {
-                if group.name != *name {
-                    continue;
-                }
+            if let RepoFilter::Repo(ref name) = self.repo_filter
+                && group.name != *name
+            {
+                continue;
             }
             for (pane, _) in &group.panes {
                 all += 1;
@@ -448,21 +446,31 @@ mod tests {
     #[test]
     fn test_agent_filter_next_cycle() {
         let mut f = AgentFilter::All;
-        f = f.next(); assert_eq!(f, AgentFilter::Running);
-        f = f.next(); assert_eq!(f, AgentFilter::Waiting);
-        f = f.next(); assert_eq!(f, AgentFilter::Idle);
-        f = f.next(); assert_eq!(f, AgentFilter::Error);
-        f = f.next(); assert_eq!(f, AgentFilter::All);
+        f = f.next();
+        assert_eq!(f, AgentFilter::Running);
+        f = f.next();
+        assert_eq!(f, AgentFilter::Waiting);
+        f = f.next();
+        assert_eq!(f, AgentFilter::Idle);
+        f = f.next();
+        assert_eq!(f, AgentFilter::Error);
+        f = f.next();
+        assert_eq!(f, AgentFilter::All);
     }
 
     #[test]
     fn test_agent_filter_prev_cycle() {
         let mut f = AgentFilter::All;
-        f = f.prev(); assert_eq!(f, AgentFilter::Error);
-        f = f.prev(); assert_eq!(f, AgentFilter::Idle);
-        f = f.prev(); assert_eq!(f, AgentFilter::Waiting);
-        f = f.prev(); assert_eq!(f, AgentFilter::Running);
-        f = f.prev(); assert_eq!(f, AgentFilter::All);
+        f = f.prev();
+        assert_eq!(f, AgentFilter::Error);
+        f = f.prev();
+        assert_eq!(f, AgentFilter::Idle);
+        f = f.prev();
+        assert_eq!(f, AgentFilter::Waiting);
+        f = f.prev();
+        assert_eq!(f, AgentFilter::Running);
+        f = f.prev();
+        assert_eq!(f, AgentFilter::All);
     }
 
     #[test]
@@ -491,7 +499,11 @@ mod tests {
 
     #[test]
     fn test_scroll_down() {
-        let mut s = ScrollState { offset: 0, total_lines: 20, visible_height: 10 };
+        let mut s = ScrollState {
+            offset: 0,
+            total_lines: 20,
+            visible_height: 10,
+        };
         s.scroll(5);
         assert_eq!(s.offset, 5);
         s.scroll(10);
@@ -501,7 +513,11 @@ mod tests {
 
     #[test]
     fn test_scroll_up() {
-        let mut s = ScrollState { offset: 5, total_lines: 20, visible_height: 10 };
+        let mut s = ScrollState {
+            offset: 5,
+            total_lines: 20,
+            visible_height: 10,
+        };
         s.scroll(-3);
         assert_eq!(s.offset, 2);
         s.scroll(-10);
@@ -510,7 +526,11 @@ mod tests {
 
     #[test]
     fn test_scroll_clamp() {
-        let mut s = ScrollState { offset: 15, total_lines: 20, visible_height: 10 };
+        let mut s = ScrollState {
+            offset: 15,
+            total_lines: 20,
+            visible_height: 10,
+        };
         s.clamp();
         assert_eq!(s.offset, 10); // max = 20 - 10 = 10
 
@@ -521,7 +541,11 @@ mod tests {
 
     #[test]
     fn test_scroll_when_content_fits() {
-        let mut s = ScrollState { offset: 0, total_lines: 5, visible_height: 10 };
+        let mut s = ScrollState {
+            offset: 0,
+            total_lines: 5,
+            visible_height: 10,
+        };
         s.scroll(5);
         assert_eq!(s.offset, 0); // max = 0, can't scroll
     }
@@ -575,9 +599,7 @@ mod tests {
             RepoGroup {
                 name: "project-a".into(),
                 has_focus: false,
-                panes: vec![
-                    (make_pane(1, PaneStatus::Running), make_git_info()),
-                ],
+                panes: vec![(make_pane(1, PaneStatus::Running), make_git_info())],
             },
             RepoGroup {
                 name: "project-b".into(),

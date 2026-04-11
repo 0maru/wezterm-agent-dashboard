@@ -20,7 +20,7 @@ WezTerm 向けの AI エージェント監視ダッシュボード。tmux-agent-
 
 ### データフロー
 ```
-Agent hooks → hook.sh → binary "hook" → OSC 1337 User Variables + activity log
+Agent hooks → `wezterm-agent-dashboard hook` (or hook.sh wrapper) → OSC 1337 User Variables + activity log
 TUI binary → wezterm cli list --format json → Ratatui rendering
 Lua config → Status Bar summary + keybinding
 ```

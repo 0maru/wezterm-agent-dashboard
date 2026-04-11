@@ -78,6 +78,64 @@ agent_dashboard.apply_to_config(config, {
 })
 ```
 
+## エージェントフック
+
+ダッシュボードは Claude Code / Codex からのフック呼び出しでエージェントの状態を受け取ります。`wezterm-agent-dashboard` が `PATH` に入っている場合（Homebrew 経由のインストールなど）、シェルラッパーを経由せずに直接バイナリを呼び出せます。
+
+### Claude Code
+
+`~/.claude/settings.json` に以下を追加してください:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "wezterm-agent-dashboard hook claude user-prompt-submit" }] }
+    ],
+    "Notification": [
+      { "hooks": [{ "type": "command", "command": "wezterm-agent-dashboard hook claude notification" }] }
+    ],
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "wezterm-agent-dashboard hook claude stop" }] }
+    ],
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "wezterm-agent-dashboard hook claude session-start" }] }
+    ],
+    "SessionEnd": [
+      { "hooks": [{ "type": "command", "command": "wezterm-agent-dashboard hook claude session-end" }] }
+    ],
+    "PostToolUse": [
+      { "hooks": [{ "type": "command", "command": "wezterm-agent-dashboard hook claude activity-log" }] }
+    ]
+  }
+}
+```
+
+### サポートされているイベント
+
+`hook` サブコマンドの3番目の引数として以下のイベント名を渡せます:
+
+| イベント | 効果 |
+|---|---|
+| `user-prompt-submit` | エージェントを `running` に設定し、ユーザープロンプトを記録 |
+| `notification` | エージェントを `waiting` に設定（権限要求など） |
+| `stop` | エージェントを `idle` に設定し、最後の応答を記録 |
+| `stop-failure` | エージェントを `error` に設定 |
+| `session-start` | エージェント状態をリセット |
+| `session-end` | 状態とアクティビティログをクリア |
+| `activity-log` | ツール使用のエントリをアクティビティログに追加 |
+| `subagent-start` / `subagent-stop` | 起動中のサブエージェントを追跡 |
+
+Codex のフックでは `claude` の代わりに `codex` を渡してください。
+
+### レガシー: `hook.sh` ラッパー
+
+バイナリが `PATH` に入っていない場合（`cargo install` を使わずソースビルドした環境など）は、同梱の `hook.sh` を経由できます。これは一般的なインストール先を探索して見つけたバイナリに委譲します:
+
+```json
+{ "type": "command", "command": "bash /path/to/wezterm-agent-dashboard/hook.sh claude user-prompt-submit" }
+```
+
 ## 開発
 
 ```sh

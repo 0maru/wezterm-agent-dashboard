@@ -78,6 +78,64 @@ agent_dashboard.apply_to_config(config, {
 })
 ```
 
+## Agent Hooks
+
+The dashboard reflects agent state via hook calls from Claude Code / Codex. When `wezterm-agent-dashboard` is in your `PATH` (e.g. installed via Homebrew), you can invoke it directly from your agent's hook configuration — no shell wrapper needed.
+
+### Claude Code
+
+Add the following to `~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "wezterm-agent-dashboard hook claude user-prompt-submit" }] }
+    ],
+    "Notification": [
+      { "hooks": [{ "type": "command", "command": "wezterm-agent-dashboard hook claude notification" }] }
+    ],
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "wezterm-agent-dashboard hook claude stop" }] }
+    ],
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "wezterm-agent-dashboard hook claude session-start" }] }
+    ],
+    "SessionEnd": [
+      { "hooks": [{ "type": "command", "command": "wezterm-agent-dashboard hook claude session-end" }] }
+    ],
+    "PostToolUse": [
+      { "hooks": [{ "type": "command", "command": "wezterm-agent-dashboard hook claude activity-log" }] }
+    ]
+  }
+}
+```
+
+### Supported events
+
+The third argument passed to `hook` maps to the following agent state transitions:
+
+| Event | Effect |
+|---|---|
+| `user-prompt-submit` | Mark agent as `running`; record the user prompt |
+| `notification` | Mark agent as `waiting` (e.g. permission request) |
+| `stop` | Mark agent as `idle`; record the last response |
+| `stop-failure` | Mark agent as `error` |
+| `session-start` | Reset agent state |
+| `session-end` | Clear state and activity log |
+| `activity-log` | Append a tool-use entry to the activity log |
+| `subagent-start` / `subagent-stop` | Track active subagents |
+
+Replace `claude` with `codex` for Codex hooks.
+
+### Legacy: `hook.sh` wrapper
+
+If the binary is not in `PATH` (e.g. building from source without `cargo install`), use the included `hook.sh`, which probes common install locations:
+
+```json
+{ "type": "command", "command": "bash /path/to/wezterm-agent-dashboard/hook.sh claude user-prompt-submit" }
+```
+
 ## Development
 
 ```sh

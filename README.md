@@ -26,6 +26,15 @@ wezterm-agent-dashboard displays a status bar and dashboard overlay inside [WezT
 
 ## Installation
 
+### Homebrew (recommended)
+
+```sh
+brew tap 0maru/formulae https://github.com/0maru/homebrew-formulae
+brew install wezterm-agent-dashboard
+```
+
+Pre-built binaries are available for macOS (arm64/x86_64) and Linux (x86_64).
+
 ### From source
 
 ```sh

@@ -76,10 +76,13 @@ fn run_app(
 
     // Start git polling thread
     let git_active = Arc::new(AtomicBool::new(false));
-    let (git_rx, git_shutdown, _git_handle) = git::start_git_poll_thread(git_active.clone());
+    let (git_rx, git_path_tx, git_shutdown, _git_handle) =
+        git::start_git_poll_thread(git_active.clone());
 
     // Initial refresh
-    state.refresh();
+    if let Some(path) = state.refresh() {
+        let _ = git_path_tx.send(path);
+    }
 
     let mut last_refresh = Instant::now();
     let mut last_spinner = Instant::now();
@@ -128,13 +131,17 @@ fn run_app(
                         // Filter navigation (when filter is focused)
                         (KeyCode::Char('h') | KeyCode::Left, _) if state.focus == Focus::Filter => {
                             state.agent_filter = state.agent_filter.prev();
-                            state.refresh();
+                            if let Some(path) = state.refresh_local_views() {
+                                let _ = git_path_tx.send(path);
+                            }
                         }
                         (KeyCode::Char('l') | KeyCode::Right, _)
                             if state.focus == Focus::Filter =>
                         {
                             state.agent_filter = state.agent_filter.next();
-                            state.refresh();
+                            if let Some(path) = state.refresh_local_views() {
+                                let _ = git_path_tx.send(path);
+                            }
                         }
 
                         // Agent list navigation
@@ -157,7 +164,9 @@ fn run_app(
                                     state.repo_filter = RepoFilter::Repo(name.clone());
                                 }
                                 state.repo_popup_open = false;
-                                state.refresh();
+                                if let Some(path) = state.refresh_local_views() {
+                                    let _ = git_path_tx.send(path);
+                                }
                             } else {
                                 state.jump_to_selected();
                             }
@@ -188,7 +197,9 @@ fn run_app(
                                 state.repo_popup_open = false;
                             } else if state.repo_filter != RepoFilter::All {
                                 state.repo_filter = RepoFilter::All;
-                                state.refresh();
+                                if let Some(path) = state.refresh_local_views() {
+                                    let _ = git_path_tx.send(path);
+                                }
                             }
                         }
 
@@ -250,7 +261,9 @@ fn run_app(
 
         // Periodic refresh
         if last_refresh.elapsed() >= REFRESH_INTERVAL {
-            state.refresh();
+            if let Some(path) = state.refresh() {
+                let _ = git_path_tx.send(path);
+            }
             last_refresh = Instant::now();
         }
 

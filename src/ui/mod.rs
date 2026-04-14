@@ -78,9 +78,14 @@ impl Widget for Dashboard<'_> {
 
         // Repo filter popup (if open)
         if self.state.repo_popup_open {
-            let popup_width = 30.min(area.width - 2);
-            let names = self.state.repo_names();
-            let popup_height = (names.len() as u16 + 3).min(area.height - 2);
+            let entries = self.state.repo_entries();
+            let max_name_len = entries
+                .iter()
+                .map(|(_, name)| unicode_width::UnicodeWidthStr::width(name.as_str()))
+                .max()
+                .unwrap_or(3);
+            let popup_width = ((max_name_len + 4) as u16).clamp(15, area.width - 2);
+            let popup_height = (entries.len() as u16 + 3).min(area.height - 2);
 
             let popup_area = Rect {
                 x: area.x + 1,

@@ -240,10 +240,10 @@ impl AppState {
     }
 
     /// Rebuild the flat list of selectable agent rows from groups.
-    fn rebuild_row_targets(&mut self) {
+    pub(crate) fn rebuild_row_targets(&mut self) {
         // Validate repo filter
-        if let RepoFilter::Repo(ref name) = self.repo_filter
-            && !self.repo_groups.iter().any(|g| g.name == *name)
+        if let RepoFilter::Repo(ref id) = self.repo_filter
+            && !self.repo_groups.iter().any(|g| g.id == *id)
         {
             self.repo_filter = RepoFilter::All;
         }
@@ -251,8 +251,8 @@ impl AppState {
         self.agent_row_targets.clear();
 
         for group in &self.repo_groups {
-            if let RepoFilter::Repo(ref name) = self.repo_filter
-                && group.name != *name
+            if let RepoFilter::Repo(ref id) = self.repo_filter
+                && group.id != *id
             {
                 continue;
             }
@@ -335,8 +335,8 @@ impl AppState {
         let mut error = 0;
 
         for group in &self.repo_groups {
-            if let RepoFilter::Repo(ref name) = self.repo_filter
-                && group.name != *name
+            if let RepoFilter::Repo(ref id) = self.repo_filter
+                && group.id != *id
             {
                 continue;
             }
@@ -381,9 +381,12 @@ impl AppState {
         }
     }
 
-    /// Get unique repo names for the repo filter popup.
-    pub fn repo_names(&self) -> Vec<String> {
-        self.repo_groups.iter().map(|g| g.name.clone()).collect()
+    /// Get repo entries for the filter popup: (id, display_name).
+    pub fn repo_entries(&self) -> Vec<(String, String)> {
+        self.repo_groups
+            .iter()
+            .map(|g| (g.id.clone(), g.name.clone()))
+            .collect()
     }
 
     /// Find a specific pane by ID across all groups.
@@ -574,6 +577,7 @@ mod tests {
     #[test]
     fn test_status_counts() {
         let groups = vec![RepoGroup {
+            id: "/tmp/project".into(),
             name: "project".into(),
             has_focus: false,
             panes: vec![
@@ -597,11 +601,13 @@ mod tests {
     fn test_status_counts_with_repo_filter() {
         let groups = vec![
             RepoGroup {
+                id: "/tmp/project-a".into(),
                 name: "project-a".into(),
                 has_focus: false,
                 panes: vec![(make_pane(1, PaneStatus::Running), make_git_info())],
             },
             RepoGroup {
+                id: "/tmp/project-b".into(),
                 name: "project-b".into(),
                 has_focus: false,
                 panes: vec![
@@ -611,7 +617,7 @@ mod tests {
             },
         ];
         let mut state = make_state_with_groups(groups);
-        state.repo_filter = RepoFilter::Repo("project-b".into());
+        state.repo_filter = RepoFilter::Repo("/tmp/project-b".into());
 
         let (all, running, _waiting, idle, error) = state.status_counts();
         assert_eq!(all, 2);
@@ -623,6 +629,7 @@ mod tests {
     #[test]
     fn test_select_prev_next() {
         let groups = vec![RepoGroup {
+            id: "/tmp/project".into(),
             name: "project".into(),
             has_focus: false,
             panes: vec![
@@ -654,6 +661,7 @@ mod tests {
     #[test]
     fn test_selected_pane() {
         let groups = vec![RepoGroup {
+            id: "/tmp/project".into(),
             name: "project".into(),
             has_focus: false,
             panes: vec![
@@ -677,6 +685,7 @@ mod tests {
     #[test]
     fn test_find_pane() {
         let groups = vec![RepoGroup {
+            id: "/tmp/project".into(),
             name: "project".into(),
             has_focus: false,
             panes: vec![
@@ -692,20 +701,86 @@ mod tests {
     }
 
     #[test]
-    fn test_repo_names() {
+    fn test_repo_entries() {
         let groups = vec![
             RepoGroup {
+                id: "/tmp/alpha".into(),
                 name: "alpha".into(),
                 has_focus: false,
                 panes: vec![(make_pane(1, PaneStatus::Running), make_git_info())],
             },
             RepoGroup {
+                id: "/tmp/beta".into(),
                 name: "beta".into(),
                 has_focus: true,
                 panes: vec![(make_pane(2, PaneStatus::Idle), make_git_info())],
             },
         ];
         let state = make_state_with_groups(groups);
-        assert_eq!(state.repo_names(), vec!["alpha", "beta"]);
+        let entries = state.repo_entries();
+        assert_eq!(
+            entries,
+            vec![
+                ("/tmp/alpha".to_string(), "alpha".to_string()),
+                ("/tmp/beta".to_string(), "beta".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_repo_filter_with_same_basename() {
+        let groups = vec![
+            RepoGroup {
+                id: "/home/user/foo/api".into(),
+                name: "foo/api".into(),
+                has_focus: false,
+                panes: vec![(make_pane(1, PaneStatus::Running), make_git_info())],
+            },
+            RepoGroup {
+                id: "/home/user/bar/api".into(),
+                name: "bar/api".into(),
+                has_focus: false,
+                panes: vec![
+                    (make_pane(2, PaneStatus::Idle), make_git_info()),
+                    (make_pane(3, PaneStatus::Error), make_git_info()),
+                ],
+            },
+        ];
+        let mut state = make_state_with_groups(groups);
+
+        // Filter to foo/api by id
+        state.repo_filter = RepoFilter::Repo("/home/user/foo/api".into());
+        state.rebuild_row_targets();
+
+        let (all, running, _, _, _) = state.status_counts();
+        assert_eq!(all, 1);
+        assert_eq!(running, 1);
+
+        // Filter to bar/api by id
+        state.repo_filter = RepoFilter::Repo("/home/user/bar/api".into());
+        state.rebuild_row_targets();
+
+        let (all, _, _, idle, error) = state.status_counts();
+        assert_eq!(all, 2);
+        assert_eq!(idle, 1);
+        assert_eq!(error, 1);
+    }
+
+    #[test]
+    fn test_repo_filter_validation_uses_id() {
+        let groups = vec![RepoGroup {
+            id: "/home/user/project".into(),
+            name: "project".into(),
+            has_focus: false,
+            panes: vec![(make_pane(1, PaneStatus::Running), make_git_info())],
+        }];
+        let mut state = make_state_with_groups(groups);
+
+        // Set a filter with a non-existent id
+        state.repo_filter = RepoFilter::Repo("/nonexistent".into());
+        state.rebuild_row_targets();
+
+        // Should have been reset to All
+        assert_eq!(state.repo_filter, RepoFilter::All);
     }
 }

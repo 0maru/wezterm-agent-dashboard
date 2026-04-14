@@ -76,10 +76,17 @@ impl Widget for FilterBar<'_> {
         }
 
         // Repo filter button
-        if let RepoFilter::Repo(ref name) = self.state.repo_filter {
+        if let RepoFilter::Repo(ref id) = self.state.repo_filter {
+            let display = self
+                .state
+                .repo_groups
+                .iter()
+                .find(|g| g.id == *id)
+                .map(|g| g.name.as_str())
+                .unwrap_or(id.as_str());
             spans.push(Span::raw("  "));
             spans.push(Span::styled(
-                format!("▼{name}"),
+                format!("▼{display}"),
                 Style::default().fg(self.state.theme.active_border),
             ));
         }
@@ -108,8 +115,8 @@ impl Widget for AgentList<'_> {
         let max_y = area.y + area.height;
 
         for (group_idx, group) in self.state.repo_groups.iter().enumerate() {
-            if let RepoFilter::Repo(ref name) = self.state.repo_filter
-                && group.name != *name
+            if let RepoFilter::Repo(ref id) = self.state.repo_filter
+                && group.id != *id
             {
                 continue;
             }
@@ -346,7 +353,7 @@ impl Widget for RepoPopup<'_> {
             }
         }
 
-        let names = self.state.repo_names();
+        let entries = self.state.repo_entries();
         let mut y = area.y + 1;
 
         // "All" option
@@ -361,8 +368,8 @@ impl Widget for RepoPopup<'_> {
             y += 1;
         }
 
-        // Repo names
-        for (i, name) in names.iter().enumerate() {
+        // Repo entries
+        for (i, (_id, name)) in entries.iter().enumerate() {
             if y >= area.y + area.height - 1 {
                 break;
             }

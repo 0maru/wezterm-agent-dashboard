@@ -5,6 +5,8 @@ use crate::ui::colors::ColorTheme;
 use crate::wezterm::{self, AgentType, PaneInfo, PaneStatus, WorkspaceInfo};
 use std::collections::{HashMap, HashSet};
 
+const ACTIVITY_MAX_ENTRIES: usize = 8;
+
 // ---------------------------------------------------------------------------
 // Enums
 // ---------------------------------------------------------------------------
@@ -90,33 +92,6 @@ pub struct RowTarget {
 }
 
 // ---------------------------------------------------------------------------
-// Scroll state
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone, Default)]
-pub struct ScrollState {
-    pub offset: usize,
-    pub total_lines: usize,
-    pub visible_height: usize,
-}
-
-impl ScrollState {
-    pub fn scroll(&mut self, delta: isize) {
-        let max = self.total_lines.saturating_sub(self.visible_height);
-        if delta > 0 {
-            self.offset = (self.offset + delta as usize).min(max);
-        } else {
-            self.offset = self.offset.saturating_sub((-delta) as usize);
-        }
-    }
-
-    pub fn clamp(&mut self) {
-        let max = self.total_lines.saturating_sub(self.visible_height);
-        self.offset = self.offset.min(max);
-    }
-}
-
-// ---------------------------------------------------------------------------
 // AppState
 // ---------------------------------------------------------------------------
 
@@ -125,24 +100,18 @@ pub struct AppState {
     pub workspaces: Vec<WorkspaceInfo>,
     pub repo_groups: Vec<RepoGroup>,
     pub dashboard_pane_id: u64,
-    pub sidebar_focused: bool,
     pub focus: Focus,
     pub spinner_frame: usize,
 
     // Agent list
     pub selected_agent_row: usize,
     pub agent_row_targets: Vec<RowTarget>,
-    pub agents_scroll: ScrollState,
-    pub line_to_row: Vec<Option<usize>>,
 
     // Activity log
     pub activity_entries: Vec<ActivityEntry>,
-    pub activity_scroll: ScrollState,
-    pub activity_max_entries: usize,
 
     // Focused pane tracking
     pub focused_pane_id: Option<u64>,
-    pub prev_focused_pane_id: Option<u64>,
 
     // Theme
     pub theme: ColorTheme,
@@ -150,24 +119,15 @@ pub struct AppState {
     // Bottom panel
     pub bottom_tab: BottomTab,
     pub git: GitData,
-    pub git_scroll: ScrollState,
 
     // Task progress
     pub pane_task_progress: HashMap<u64, TaskProgress>,
-    pub pane_task_dismissed: HashMap<u64, usize>,
-    pub pane_inactive_since: HashMap<u64, u64>,
-
-    // Agent tracking
-    pub seen_agent_panes: HashSet<u64>,
-    pub pane_tab_prefs: HashMap<u64, BottomTab>,
 
     // Filters
     pub agent_filter: AgentFilter,
     pub repo_filter: RepoFilter,
     pub repo_popup_open: bool,
     pub repo_popup_selected: usize,
-    pub repo_popup_area: Option<ratatui::layout::Rect>,
-    pub repo_button_col: u16,
 }
 
 impl AppState {
@@ -177,33 +137,20 @@ impl AppState {
             workspaces: Vec::new(),
             repo_groups: Vec::new(),
             dashboard_pane_id,
-            sidebar_focused: false,
             focus: Focus::Agents,
             spinner_frame: 0,
             selected_agent_row: 0,
             agent_row_targets: Vec::new(),
-            agents_scroll: ScrollState::default(),
-            line_to_row: Vec::new(),
             activity_entries: Vec::new(),
-            activity_scroll: ScrollState::default(),
-            activity_max_entries: 8,
             focused_pane_id: None,
-            prev_focused_pane_id: None,
             theme: ColorTheme::default(),
             bottom_tab: BottomTab::Activity,
             git: GitData::default(),
-            git_scroll: ScrollState::default(),
             pane_task_progress: HashMap::new(),
-            pane_task_dismissed: HashMap::new(),
-            pane_inactive_since: HashMap::new(),
-            seen_agent_panes: HashSet::new(),
-            pane_tab_prefs: HashMap::new(),
             agent_filter: AgentFilter::All,
             repo_filter: RepoFilter::All,
             repo_popup_open: false,
             repo_popup_selected: 0,
-            repo_popup_area: None,
-            repo_button_col: 0,
         }
     }
 
@@ -219,7 +166,6 @@ impl AppState {
         if let Some(fid) = new_focused
             && self.focused_pane_id != Some(fid)
         {
-            self.prev_focused_pane_id = self.focused_pane_id;
             self.focused_pane_id = Some(fid);
         }
 
@@ -282,10 +228,10 @@ impl AppState {
 
     fn refresh_activity(&mut self) {
         if let Some(pane_id) = self.focused_pane_id {
-            self.activity_entries = activity::read_activity_log(pane_id, self.activity_max_entries);
+            self.activity_entries = activity::read_activity_log(pane_id, ACTIVITY_MAX_ENTRIES);
         } else if let Some(first) = self.agent_row_targets.first() {
             self.activity_entries =
-                activity::read_activity_log(first.pane_id, self.activity_max_entries);
+                activity::read_activity_log(first.pane_id, ACTIVITY_MAX_ENTRIES);
         } else {
             self.activity_entries.clear();
         }
@@ -429,7 +375,6 @@ mod tests {
             wait_reason: String::new(),
             permission_mode: PermissionMode::Default,
             subagents: Vec::new(),
-            pane_pid: None,
         }
     }
 
@@ -493,61 +438,6 @@ mod tests {
     fn test_bottom_tab_toggle() {
         assert_eq!(BottomTab::Activity.toggle(), BottomTab::GitStatus);
         assert_eq!(BottomTab::GitStatus.toggle(), BottomTab::Activity);
-    }
-
-    // -- ScrollState tests --
-
-    #[test]
-    fn test_scroll_down() {
-        let mut s = ScrollState {
-            offset: 0,
-            total_lines: 20,
-            visible_height: 10,
-        };
-        s.scroll(5);
-        assert_eq!(s.offset, 5);
-        s.scroll(10);
-        // max = 20 - 10 = 10
-        assert_eq!(s.offset, 10);
-    }
-
-    #[test]
-    fn test_scroll_up() {
-        let mut s = ScrollState {
-            offset: 5,
-            total_lines: 20,
-            visible_height: 10,
-        };
-        s.scroll(-3);
-        assert_eq!(s.offset, 2);
-        s.scroll(-10);
-        assert_eq!(s.offset, 0);
-    }
-
-    #[test]
-    fn test_scroll_clamp() {
-        let mut s = ScrollState {
-            offset: 15,
-            total_lines: 20,
-            visible_height: 10,
-        };
-        s.clamp();
-        assert_eq!(s.offset, 10); // max = 20 - 10 = 10
-
-        s.total_lines = 5;
-        s.clamp();
-        assert_eq!(s.offset, 0); // max = 0 (visible_height > total_lines)
-    }
-
-    #[test]
-    fn test_scroll_when_content_fits() {
-        let mut s = ScrollState {
-            offset: 0,
-            total_lines: 5,
-            visible_height: 10,
-        };
-        s.scroll(5);
-        assert_eq!(s.offset, 0); // max = 0, can't scroll
     }
 
     // -- AppState tests --

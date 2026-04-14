@@ -191,6 +191,55 @@ fn fetch_pr_number(cwd: &str) -> Option<u32> {
 }
 
 // ---------------------------------------------------------------------------
+// Background polling thread
+// ---------------------------------------------------------------------------
+
+/// Start a background thread that polls git data every 2 seconds.
+/// Only polls when `active` flag is true (git tab visible).
+pub fn start_git_poll_thread(
+    active: Arc<AtomicBool>,
+) -> (
+    mpsc::Receiver<GitData>,
+    Arc<AtomicBool>,
+    thread::JoinHandle<()>,
+) {
+    let (tx, rx) = mpsc::channel();
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let shutdown_clone = shutdown.clone();
+
+    let handle = thread::spawn(move || {
+        loop {
+            if shutdown_clone.load(Ordering::Relaxed) {
+                break;
+            }
+
+            thread::sleep(Duration::from_secs(2));
+
+            if !active.load(Ordering::Relaxed) {
+                continue;
+            }
+
+            let path_file = "/tmp/wezterm-agent-dashboard-git-path";
+            let path = std::fs::read_to_string(path_file)
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+
+            if path.is_empty() {
+                continue;
+            }
+
+            let data = fetch_git_data(&path);
+            if tx.send(data).is_err() {
+                break;
+            }
+        }
+    });
+
+    (rx, shutdown, handle)
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -329,61 +378,4 @@ mod tests {
         assert!(data.branch.is_empty());
         assert!(data.path.is_empty());
     }
-}
-
-// ---------------------------------------------------------------------------
-// Background polling thread
-// ---------------------------------------------------------------------------
-
-/// Start a background thread that polls git data every 2 seconds.
-/// Only polls when `active` flag is true (git tab visible).
-pub fn start_git_poll_thread(
-    active: Arc<AtomicBool>,
-) -> (
-    mpsc::Receiver<GitData>,
-    Arc<AtomicBool>,
-    thread::JoinHandle<()>,
-) {
-    let (tx, rx) = mpsc::channel();
-    let shutdown = Arc::new(AtomicBool::new(false));
-    let shutdown_clone = shutdown.clone();
-
-    let handle = thread::spawn(move || {
-        let mut last_path = String::new();
-
-        loop {
-            if shutdown_clone.load(Ordering::Relaxed) {
-                break;
-            }
-
-            thread::sleep(Duration::from_secs(2));
-
-            if !active.load(Ordering::Relaxed) {
-                continue;
-            }
-
-            // Read the path from a temp file or use a default mechanism
-            // In practice, the main thread writes the focused pane's cwd to this
-            let path_file = "/tmp/wezterm-agent-dashboard-git-path";
-            let path = std::fs::read_to_string(path_file)
-                .unwrap_or_default()
-                .trim()
-                .to_string();
-
-            if path.is_empty() {
-                continue;
-            }
-
-            if path != last_path {
-                last_path = path.clone();
-            }
-
-            let data = fetch_git_data(&last_path);
-            if tx.send(data).is_err() {
-                break;
-            }
-        }
-    });
-
-    (rx, shutdown, handle)
 }

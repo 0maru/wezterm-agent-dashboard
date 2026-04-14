@@ -133,7 +133,6 @@ pub struct PaneInfo {
     pub wait_reason: String,
     pub permission_mode: PermissionMode,
     pub subagents: Vec<String>,
-    pub pane_pid: Option<u32>,
 }
 
 // ---------------------------------------------------------------------------
@@ -216,9 +215,6 @@ pub fn build_workspaces(
     // workspace_name → (tab_id → TabInfo)
     let mut workspaces: IndexMap<String, IndexMap<u64, TabInfo>> = IndexMap::new();
 
-    // Detect codex permission modes from ps output
-    let codex_modes = detect_codex_modes();
-
     for raw in raw_panes {
         // Skip the dashboard pane itself
         if Some(raw.pane_id) == dashboard_pane_id {
@@ -234,7 +230,7 @@ pub fn build_workspaces(
             continue;
         }
 
-        let pane_info = match parse_pane_info(&raw, &codex_modes) {
+        let pane_info = match parse_pane_info(&raw) {
             Some(p) => p,
             None => continue,
         };
@@ -266,10 +262,7 @@ pub fn build_workspaces(
 
 /// Parse a raw WezTerm pane into a PaneInfo.
 /// Returns None if the pane has no agent_type user variable.
-fn parse_pane_info(
-    raw: &RawWezTermPane,
-    _codex_modes: &HashMap<u32, PermissionMode>,
-) -> Option<PaneInfo> {
+fn parse_pane_info(raw: &RawWezTermPane) -> Option<PaneInfo> {
     let agent_type_str = raw.user_vars.get("agent_type")?;
     let agent = AgentType::from_str(agent_type_str)?;
 
@@ -315,20 +308,11 @@ fn parse_pane_info(
         .cloned()
         .unwrap_or_default();
 
-    let permission_mode = if agent == AgentType::Codex {
-        // For codex, detect from ps if available
-        // pane_pid is not directly available from wezterm cli list,
-        // so we fall back to user var
-        raw.user_vars
-            .get("agent_permission_mode")
-            .map(|s| PermissionMode::from_str(s))
-            .unwrap_or(PermissionMode::Default)
-    } else {
-        raw.user_vars
-            .get("agent_permission_mode")
-            .map(|s| PermissionMode::from_str(s))
-            .unwrap_or(PermissionMode::Default)
-    };
+    let permission_mode = raw
+        .user_vars
+        .get("agent_permission_mode")
+        .map(|s| PermissionMode::from_str(s))
+        .unwrap_or(PermissionMode::Default);
 
     let subagents: Vec<String> = raw
         .user_vars
@@ -353,7 +337,6 @@ fn parse_pane_info(
         wait_reason,
         permission_mode,
         subagents,
-        pane_pid: None,
     })
 }
 
@@ -381,51 +364,6 @@ fn hex_byte(b: u8) -> u8 {
         b'A'..=b'F' => b - b'A' + 10,
         _ => 0,
     }
-}
-
-/// Detect Codex permission modes from running processes.
-fn detect_codex_modes() -> HashMap<u32, PermissionMode> {
-    let mut modes = HashMap::new();
-
-    let output = Command::new("ps").args(["-eo", "pid,args"]).output().ok();
-
-    let output = match output {
-        Some(o) if o.status.success() => o,
-        _ => return modes,
-    };
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    for line in stdout.lines() {
-        let line = line.trim();
-        if !line.contains("codex") {
-            continue;
-        }
-
-        let parts: Vec<&str> = line.splitn(2, char::is_whitespace).collect();
-        if parts.len() < 2 {
-            continue;
-        }
-
-        let pid = match parts[0].trim().parse::<u32>() {
-            Ok(p) => p,
-            Err(_) => continue,
-        };
-
-        let args = parts[1];
-        let mode = if args.contains("--dangerously-bypass-approvals-and-sandbox")
-            || args.contains("--yolo")
-        {
-            PermissionMode::BypassPermissions
-        } else if args.contains("--full-auto") {
-            PermissionMode::Auto
-        } else {
-            continue;
-        };
-
-        modes.insert(pid, mode);
-    }
-
-    modes
 }
 
 // ---------------------------------------------------------------------------
@@ -641,7 +579,6 @@ mod tests {
                         wait_reason: String::new(),
                         permission_mode: PermissionMode::Default,
                         subagents: Vec::new(),
-                        pane_pid: None,
                     },
                     PaneInfo {
                         pane_id: 2,
@@ -659,7 +596,6 @@ mod tests {
                         wait_reason: String::new(),
                         permission_mode: PermissionMode::Default,
                         subagents: Vec::new(),
-                        pane_pid: None,
                     },
                 ],
             }],
@@ -691,7 +627,6 @@ mod tests {
                     wait_reason: String::new(),
                     permission_mode: PermissionMode::Default,
                     subagents: Vec::new(),
-                    pane_pid: None,
                 }],
             }],
         }];

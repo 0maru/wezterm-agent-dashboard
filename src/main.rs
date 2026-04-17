@@ -177,10 +177,10 @@ fn run_app(
                                 state.repo_popup_selected += 1;
                             }
                         }
-                        (KeyCode::Char('k') | KeyCode::Up, _) if state.repo_popup_open => {
-                            if state.repo_popup_selected > 0 {
-                                state.repo_popup_selected -= 1;
-                            }
+                        (KeyCode::Char('k') | KeyCode::Up, _)
+                            if state.repo_popup_open && state.repo_popup_selected > 0 =>
+                        {
+                            state.repo_popup_selected -= 1;
                         }
 
                         // Escape closes popup or clears filter
@@ -225,11 +225,9 @@ fn run_app(
                                 state.activity_scroll.scroll(3);
                             }
                         }
-                        MouseEventKind::Down(_) => {
-                            // Simple click handling: close popup on any click outside
-                            if state.repo_popup_open {
-                                state.repo_popup_open = false;
-                            }
+                        // Simple click handling: close popup on any click outside
+                        MouseEventKind::Down(_) if state.repo_popup_open => {
+                            state.repo_popup_open = false;
                         }
                         _ => {}
                     }

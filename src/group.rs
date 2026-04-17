@@ -168,10 +168,9 @@ fn disambiguate_names(groups: &mut [RepoGroup]) {
     for g in groups.iter_mut() {
         if name_count.get(&g.name).copied().unwrap_or(0) > 1 {
             let path = std::path::Path::new(&g.id);
-            if let (Some(parent), Some(file_name)) = (
-                path.parent().and_then(|p| p.file_name()),
-                path.file_name(),
-            ) {
+            if let (Some(parent), Some(file_name)) =
+                (path.parent().and_then(|p| p.file_name()), path.file_name())
+            {
                 g.name = format!(
                     "{}/{}",
                     parent.to_string_lossy(),

@@ -64,7 +64,7 @@ mod tests {
 
     #[test]
     fn test_decode_non_utf8() {
-        let encoded = base64::engine::general_purpose::STANDARD.encode(&[0xff, 0xfe]);
+        let encoded = base64::engine::general_purpose::STANDARD.encode([0xff, 0xfe]);
         assert_eq!(decode_user_var(&encoded), "");
     }
 }

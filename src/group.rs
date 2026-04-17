@@ -268,7 +268,7 @@ mod tests {
 }
 
 #[cfg(test)]
-mod tests {
+mod grouping_tests {
     use super::*;
     use crate::wezterm::{AgentType, PaneStatus, PermissionMode, TabInfo};
 
@@ -289,7 +289,6 @@ mod tests {
             wait_reason: String::new(),
             permission_mode: PermissionMode::Default,
             subagents: Vec::new(),
-            pane_pid: None,
         }
     }
 

@@ -204,43 +204,15 @@ fn run_app(
                             }
                         }
 
-                        // Activity log scroll
-                        (KeyCode::Char('j') | KeyCode::Down, _)
-                            if state.focus == Focus::ActivityLog =>
-                        {
-                            state.activity_scroll.scroll(1);
-                        }
-                        (KeyCode::Char('k') | KeyCode::Up, _)
-                            if state.focus == Focus::ActivityLog =>
-                        {
-                            state.activity_scroll.scroll(-1);
-                        }
-
                         _ => {}
                     }
                 }
 
                 Event::Mouse(mouse) => {
-                    match mouse.kind {
-                        MouseEventKind::ScrollUp => {
-                            if state.focus == Focus::Agents {
-                                state.agents_scroll.scroll(-3);
-                            } else {
-                                state.activity_scroll.scroll(-3);
-                            }
-                        }
-                        MouseEventKind::ScrollDown => {
-                            if state.focus == Focus::Agents {
-                                state.agents_scroll.scroll(3);
-                            } else {
-                                state.activity_scroll.scroll(3);
-                            }
-                        }
-                        // Simple click handling: close popup on any click outside
-                        MouseEventKind::Down(_) if state.repo_popup_open => {
-                            state.repo_popup_open = false;
-                        }
-                        _ => {}
+                    if let MouseEventKind::Down(_) = mouse.kind
+                        && state.repo_popup_open
+                    {
+                        state.repo_popup_open = false;
                     }
                 }
 

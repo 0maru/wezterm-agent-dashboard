@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::PathBuf;
+use std::time::SystemTime;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -68,6 +69,29 @@ impl TaskProgress {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LogFingerprint {
+    pub exists: bool,
+    pub len: u64,
+    pub modified: Option<SystemTime>,
+}
+
+impl LogFingerprint {
+    pub fn missing() -> Self {
+        Self {
+            exists: false,
+            len: 0,
+            modified: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ActivitySnapshot {
+    pub display_entries: Vec<ActivityEntry>,
+    pub task_progress: TaskProgress,
+}
+
 // ---------------------------------------------------------------------------
 // File I/O
 // ---------------------------------------------------------------------------
@@ -92,6 +116,38 @@ pub fn read_activity_log(pane_id: u64, max_entries: usize) -> Vec<ActivityEntry>
         .take(max_entries)
         .filter_map(parse_activity_line)
         .collect()
+}
+
+pub fn log_fingerprint(pane_id: u64) -> LogFingerprint {
+    let path = log_file_path(pane_id);
+    match fs::metadata(path) {
+        Ok(meta) => LogFingerprint {
+            exists: true,
+            len: meta.len(),
+            modified: meta.modified().ok(),
+        },
+        Err(_) => LogFingerprint::missing(),
+    }
+}
+
+pub fn read_activity_snapshot(
+    pane_id: u64,
+    display_limit: usize,
+    progress_limit: usize,
+) -> ActivitySnapshot {
+    let entries = read_activity_log(pane_id, display_limit.max(progress_limit));
+    let display_entries = entries.iter().take(display_limit).cloned().collect();
+    let progress_entries = entries
+        .iter()
+        .take(progress_limit)
+        .cloned()
+        .collect::<Vec<_>>();
+    let task_progress = parse_task_progress(&progress_entries);
+
+    ActivitySnapshot {
+        display_entries,
+        task_progress,
+    }
 }
 
 fn parse_activity_line(line: &str) -> Option<ActivityEntry> {

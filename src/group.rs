@@ -1,6 +1,7 @@
 use crate::wezterm::{PaneInfo, WorkspaceInfo};
 use indexmap::IndexMap;
 use std::collections::HashMap;
+use std::path::Path;
 use std::process::Command;
 
 // ---------------------------------------------------------------------------
@@ -99,6 +100,45 @@ pub fn resolve_pane_git_info(path: &str) -> PaneGitInfo {
     }
 }
 
+fn cached_git_info_for_path(
+    path: &str,
+    git_cache: &HashMap<String, PaneGitInfo>,
+) -> Option<PaneGitInfo> {
+    if let Some(info) = git_cache.get(path) {
+        return Some(info.clone());
+    }
+
+    let path = Path::new(path);
+
+    git_cache
+        .values()
+        .filter_map(|info| {
+            let repo_root = info.repo_root.as_ref()?;
+            let repo_path = Path::new(repo_root);
+            if path == repo_path || path.starts_with(repo_path) {
+                Some((repo_root.len(), info.clone()))
+            } else {
+                None
+            }
+        })
+        .max_by_key(|(len, _)| *len)
+        .map(|(_, info)| info)
+}
+
+fn resolve_cached_git_info(
+    path: &str,
+    git_cache: &mut HashMap<String, PaneGitInfo>,
+) -> PaneGitInfo {
+    if let Some(info) = cached_git_info_for_path(path, git_cache) {
+        git_cache.insert(path.to_string(), info.clone());
+        return info;
+    }
+
+    let info = resolve_pane_git_info(path);
+    git_cache.insert(path.to_string(), info.clone());
+    info
+}
+
 // ---------------------------------------------------------------------------
 // Grouping
 // ---------------------------------------------------------------------------
@@ -108,18 +148,15 @@ pub fn resolve_pane_git_info(path: &str) -> PaneGitInfo {
 pub fn group_panes_by_repo(
     workspaces: &[WorkspaceInfo],
     focused_pane_id: Option<u64>,
+    git_cache: &mut HashMap<String, PaneGitInfo>,
 ) -> Vec<RepoGroup> {
-    let mut git_cache: HashMap<String, PaneGitInfo> = HashMap::new();
     // group_key → Vec<(PaneInfo, PaneGitInfo)>
     let mut groups: IndexMap<String, Vec<(PaneInfo, PaneGitInfo)>> = IndexMap::new();
 
     for ws in workspaces {
         for tab in &ws.tabs {
             for pane in &tab.panes {
-                let git_info = git_cache
-                    .entry(pane.path.clone())
-                    .or_insert_with(|| resolve_pane_git_info(&pane.path))
-                    .clone();
+                let git_info = resolve_cached_git_info(&pane.path, git_cache);
 
                 let group_key = git_info
                     .repo_root
@@ -227,5 +264,80 @@ mod tests {
         assert_eq!(groups[0].name, "foo/api");
         assert_eq!(groups[1].name, "bar/api");
         assert_eq!(groups[2].name, "web");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::wezterm::{AgentType, PaneStatus, PermissionMode, TabInfo};
+
+    fn make_pane(pane_id: u64, path: &str) -> PaneInfo {
+        PaneInfo {
+            pane_id,
+            tab_id: 1,
+            window_id: 1,
+            workspace: "default".into(),
+            pane_active: false,
+            status: PaneStatus::Running,
+            attention: false,
+            agent: AgentType::Codex,
+            path: path.into(),
+            prompt: String::new(),
+            prompt_is_response: false,
+            started_at: None,
+            wait_reason: String::new(),
+            permission_mode: PermissionMode::Default,
+            subagents: Vec::new(),
+            pane_pid: None,
+        }
+    }
+
+    fn make_workspace(panes: Vec<PaneInfo>) -> Vec<WorkspaceInfo> {
+        vec![WorkspaceInfo {
+            workspace_name: "default".into(),
+            tabs: vec![TabInfo {
+                tab_id: 1,
+                tab_title: "tab".into(),
+                tab_active: true,
+                panes,
+            }],
+        }]
+    }
+
+    fn make_git_info(repo_root: &str) -> PaneGitInfo {
+        PaneGitInfo {
+            repo_root: Some(repo_root.into()),
+            branch: Some("main".into()),
+            is_worktree: false,
+        }
+    }
+
+    #[test]
+    fn test_cached_git_info_for_path_reuses_repo_root_prefix() {
+        let mut cache = HashMap::new();
+        cache.insert("/repo".into(), make_git_info("/repo"));
+
+        let info = resolve_cached_git_info("/repo/src/module", &mut cache);
+
+        assert_eq!(info.repo_root.as_deref(), Some("/repo"));
+        assert!(cache.contains_key("/repo/src/module"));
+    }
+
+    #[test]
+    fn test_group_panes_by_repo_reuses_cached_git_info_for_subdirs() {
+        let workspaces = make_workspace(vec![make_pane(1, "/repo"), make_pane(2, "/repo/src")]);
+        let mut cache = HashMap::new();
+        cache.insert("/repo".into(), make_git_info("/repo"));
+
+        let groups = group_panes_by_repo(&workspaces, Some(2), &mut cache);
+
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].name, "repo");
+        assert!(groups[0].has_focus);
+        assert_eq!(groups[0].panes.len(), 2);
+        assert_eq!(groups[0].panes[0].1.repo_root.as_deref(), Some("/repo"));
+        assert_eq!(groups[0].panes[1].1.repo_root.as_deref(), Some("/repo"));
+        assert!(cache.contains_key("/repo/src"));
     }
 }

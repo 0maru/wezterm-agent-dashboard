@@ -16,6 +16,7 @@ pub struct PaneGitInfo {
 
 #[derive(Debug, Clone)]
 pub struct RepoGroup {
+    pub id: String,
     pub name: String,
     pub has_focus: bool,
     pub panes: Vec<(PaneInfo, PaneGitInfo)>,
@@ -133,7 +134,7 @@ pub fn group_panes_by_repo(
         }
     }
 
-    groups
+    let mut result: Vec<RepoGroup> = groups
         .into_iter()
         .map(|(key, panes)| {
             let name = std::path::Path::new(&key)
@@ -145,10 +146,86 @@ pub fn group_panes_by_repo(
                 focused_pane_id.is_some_and(|fid| panes.iter().any(|(p, _)| p.pane_id == fid));
 
             RepoGroup {
+                id: key,
                 name,
                 has_focus,
                 panes,
             }
         })
-        .collect()
+        .collect();
+
+    disambiguate_names(&mut result);
+
+    result
+}
+
+fn disambiguate_names(groups: &mut [RepoGroup]) {
+    let mut name_count: HashMap<String, usize> = HashMap::new();
+    for g in groups.iter() {
+        *name_count.entry(g.name.clone()).or_default() += 1;
+    }
+
+    for g in groups.iter_mut() {
+        if name_count.get(&g.name).copied().unwrap_or(0) > 1 {
+            let path = std::path::Path::new(&g.id);
+            if let (Some(parent), Some(file_name)) =
+                (path.parent().and_then(|p| p.file_name()), path.file_name())
+            {
+                g.name = format!(
+                    "{}/{}",
+                    parent.to_string_lossy(),
+                    file_name.to_string_lossy()
+                );
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_test_group(id: &str, name: &str) -> RepoGroup {
+        RepoGroup {
+            id: id.into(),
+            name: name.into(),
+            has_focus: false,
+            panes: vec![],
+        }
+    }
+
+    #[test]
+    fn test_disambiguate_unique_names() {
+        let mut groups = vec![
+            make_test_group("/home/user/src/foo", "foo"),
+            make_test_group("/home/user/src/bar", "bar"),
+        ];
+        disambiguate_names(&mut groups);
+        assert_eq!(groups[0].name, "foo");
+        assert_eq!(groups[1].name, "bar");
+    }
+
+    #[test]
+    fn test_disambiguate_duplicate_names() {
+        let mut groups = vec![
+            make_test_group("/home/user/src/foo/api", "api"),
+            make_test_group("/home/user/src/bar/api", "api"),
+        ];
+        disambiguate_names(&mut groups);
+        assert_eq!(groups[0].name, "foo/api");
+        assert_eq!(groups[1].name, "bar/api");
+    }
+
+    #[test]
+    fn test_disambiguate_mixed() {
+        let mut groups = vec![
+            make_test_group("/home/user/src/foo/api", "api"),
+            make_test_group("/home/user/src/bar/api", "api"),
+            make_test_group("/home/user/src/web", "web"),
+        ];
+        disambiguate_names(&mut groups);
+        assert_eq!(groups[0].name, "foo/api");
+        assert_eq!(groups[1].name, "bar/api");
+        assert_eq!(groups[2].name, "web");
+    }
 }

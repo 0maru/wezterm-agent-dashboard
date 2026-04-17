@@ -149,12 +149,13 @@ fn run_app(
                         (KeyCode::Enter, _) if state.focus == Focus::Agents => {
                             if state.repo_popup_open {
                                 // Select repo filter
-                                let names = state.repo_names();
+                                let entries = state.repo_entries();
                                 if state.repo_popup_selected == 0 {
                                     state.repo_filter = RepoFilter::All;
-                                } else if let Some(name) = names.get(state.repo_popup_selected - 1)
+                                } else if let Some((id, _name)) =
+                                    entries.get(state.repo_popup_selected - 1)
                                 {
-                                    state.repo_filter = RepoFilter::Repo(name.clone());
+                                    state.repo_filter = RepoFilter::Repo(id.clone());
                                 }
                                 state.repo_popup_open = false;
                                 state.refresh();
@@ -171,15 +172,15 @@ fn run_app(
 
                         // Popup navigation
                         (KeyCode::Char('j') | KeyCode::Down, _) if state.repo_popup_open => {
-                            let max = state.repo_names().len();
+                            let max = state.repo_entries().len();
                             if state.repo_popup_selected < max {
                                 state.repo_popup_selected += 1;
                             }
                         }
-                        (KeyCode::Char('k') | KeyCode::Up, _) if state.repo_popup_open => {
-                            if state.repo_popup_selected > 0 {
-                                state.repo_popup_selected -= 1;
-                            }
+                        (KeyCode::Char('k') | KeyCode::Up, _)
+                            if state.repo_popup_open && state.repo_popup_selected > 0 =>
+                        {
+                            state.repo_popup_selected -= 1;
                         }
 
                         // Escape closes popup or clears filter
@@ -224,11 +225,9 @@ fn run_app(
                                 state.activity_scroll.scroll(3);
                             }
                         }
-                        MouseEventKind::Down(_) => {
-                            // Simple click handling: close popup on any click outside
-                            if state.repo_popup_open {
-                                state.repo_popup_open = false;
-                            }
+                        // Simple click handling: close popup on any click outside
+                        MouseEventKind::Down(_) if state.repo_popup_open => {
+                            state.repo_popup_open = false;
                         }
                         _ => {}
                     }

@@ -200,17 +200,25 @@ pub fn start_git_poll_thread(
     active: Arc<AtomicBool>,
 ) -> (
     mpsc::Receiver<GitData>,
+    mpsc::Sender<String>,
     Arc<AtomicBool>,
     thread::JoinHandle<()>,
 ) {
     let (tx, rx) = mpsc::channel();
+    let (path_tx, path_rx) = mpsc::channel();
     let shutdown = Arc::new(AtomicBool::new(false));
     let shutdown_clone = shutdown.clone();
 
     let handle = thread::spawn(move || {
+        let mut current_path = String::new();
+
         loop {
             if shutdown_clone.load(Ordering::Relaxed) {
                 break;
+            }
+
+            while let Ok(path) = path_rx.try_recv() {
+                current_path = path;
             }
 
             thread::sleep(Duration::from_secs(2));
@@ -219,24 +227,18 @@ pub fn start_git_poll_thread(
                 continue;
             }
 
-            let path_file = "/tmp/wezterm-agent-dashboard-git-path";
-            let path = std::fs::read_to_string(path_file)
-                .unwrap_or_default()
-                .trim()
-                .to_string();
-
-            if path.is_empty() {
+            if current_path.is_empty() {
                 continue;
             }
 
-            let data = fetch_git_data(&path);
+            let data = fetch_git_data(&current_path);
             if tx.send(data).is_err() {
                 break;
             }
         }
     });
 
-    (rx, shutdown, handle)
+    (rx, path_tx, shutdown, handle)
 }
 
 // ---------------------------------------------------------------------------

@@ -1,14 +1,19 @@
 use crate::wezterm::{PaneInfo, WorkspaceInfo};
 use indexmap::IndexMap;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::Path;
 use std::process::Command;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
+use std::thread;
+use std::time::Duration;
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PaneGitInfo {
     pub repo_root: Option<String>,
     pub branch: Option<String>,
@@ -21,6 +26,12 @@ pub struct RepoGroup {
     pub name: String,
     pub has_focus: bool,
     pub panes: Vec<(PaneInfo, PaneGitInfo)>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RepoInfoUpdate {
+    pub path: String,
+    pub info: PaneGitInfo,
 }
 
 // ---------------------------------------------------------------------------
@@ -100,7 +111,7 @@ pub fn resolve_pane_git_info(path: &str) -> PaneGitInfo {
     }
 }
 
-fn cached_git_info_for_path(
+pub fn lookup_cached_git_info_for_path(
     path: &str,
     git_cache: &HashMap<String, PaneGitInfo>,
 ) -> Option<PaneGitInfo> {
@@ -125,18 +136,89 @@ fn cached_git_info_for_path(
         .map(|(_, info)| info)
 }
 
-fn resolve_cached_git_info(
-    path: &str,
-    git_cache: &mut HashMap<String, PaneGitInfo>,
-) -> PaneGitInfo {
-    if let Some(info) = cached_git_info_for_path(path, git_cache) {
-        git_cache.insert(path.to_string(), info.clone());
-        return info;
-    }
+pub fn start_repo_poll_thread() -> (
+    mpsc::Receiver<RepoInfoUpdate>,
+    mpsc::Sender<String>,
+    Arc<AtomicBool>,
+    thread::JoinHandle<()>,
+) {
+    let (tx, rx) = mpsc::channel();
+    let (path_tx, path_rx) = mpsc::channel::<String>();
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let shutdown_clone = shutdown.clone();
 
-    let info = resolve_pane_git_info(path);
-    git_cache.insert(path.to_string(), info.clone());
-    info
+    let handle = thread::spawn(move || {
+        run_repo_poll_loop(
+            tx,
+            path_rx,
+            shutdown_clone,
+            Duration::from_millis(50),
+            resolve_pane_git_info,
+        );
+    });
+
+    (rx, path_tx, shutdown, handle)
+}
+
+fn run_repo_poll_loop<F>(
+    tx: mpsc::Sender<RepoInfoUpdate>,
+    path_rx: mpsc::Receiver<String>,
+    shutdown: Arc<AtomicBool>,
+    idle_sleep: Duration,
+    mut resolve: F,
+) where
+    F: FnMut(&str) -> PaneGitInfo,
+{
+    let mut cache = HashMap::new();
+    let mut queued_paths = VecDeque::new();
+    let mut queued_set = HashSet::new();
+    let mut release_after_drain: Option<String> = None;
+
+    loop {
+        if shutdown.load(Ordering::Relaxed) {
+            break;
+        }
+
+        while let Ok(path) = path_rx.try_recv() {
+            if queued_set.insert(path.clone()) {
+                queued_paths.push_back(path);
+            }
+        }
+
+        if let Some(path) = release_after_drain.take() {
+            queued_set.remove(&path);
+        }
+
+        let Some(path) = queued_paths.pop_front() else {
+            thread::sleep(idle_sleep);
+            continue;
+        };
+
+        let info = if let Some(info) = lookup_cached_git_info_for_path(&path, &cache) {
+            info
+        } else {
+            resolve(&path)
+        };
+
+        cache.insert(path.clone(), info.clone());
+        if let Some(repo_root) = info.repo_root.as_ref() {
+            cache
+                .entry(repo_root.clone())
+                .or_insert_with(|| info.clone());
+        }
+
+        if tx
+            .send(RepoInfoUpdate {
+                path: path.clone(),
+                info,
+            })
+            .is_err()
+        {
+            break;
+        }
+
+        release_after_drain = Some(path);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -148,7 +230,7 @@ fn resolve_cached_git_info(
 pub fn group_panes_by_repo(
     workspaces: &[WorkspaceInfo],
     focused_pane_id: Option<u64>,
-    git_cache: &mut HashMap<String, PaneGitInfo>,
+    git_cache: &HashMap<String, PaneGitInfo>,
 ) -> Vec<RepoGroup> {
     // group_key → Vec<(PaneInfo, PaneGitInfo)>
     let mut groups: IndexMap<String, Vec<(PaneInfo, PaneGitInfo)>> = IndexMap::new();
@@ -156,7 +238,8 @@ pub fn group_panes_by_repo(
     for ws in workspaces {
         for tab in &ws.tabs {
             for pane in &tab.panes {
-                let git_info = resolve_cached_git_info(&pane.path, git_cache);
+                let git_info =
+                    lookup_cached_git_info_for_path(&pane.path, git_cache).unwrap_or_default();
 
                 let group_key = git_info
                     .repo_root
@@ -317,10 +400,9 @@ mod grouping_tests {
         let mut cache = HashMap::new();
         cache.insert("/repo".into(), make_git_info("/repo"));
 
-        let info = resolve_cached_git_info("/repo/src/module", &mut cache);
+        let info = lookup_cached_git_info_for_path("/repo/src/module", &cache).unwrap();
 
         assert_eq!(info.repo_root.as_deref(), Some("/repo"));
-        assert!(cache.contains_key("/repo/src/module"));
     }
 
     #[test]
@@ -329,7 +411,7 @@ mod grouping_tests {
         let mut cache = HashMap::new();
         cache.insert("/repo".into(), make_git_info("/repo"));
 
-        let groups = group_panes_by_repo(&workspaces, Some(2), &mut cache);
+        let groups = group_panes_by_repo(&workspaces, Some(2), &cache);
 
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].name, "repo");
@@ -337,6 +419,93 @@ mod grouping_tests {
         assert_eq!(groups[0].panes.len(), 2);
         assert_eq!(groups[0].panes[0].1.repo_root.as_deref(), Some("/repo"));
         assert_eq!(groups[0].panes[1].1.repo_root.as_deref(), Some("/repo"));
-        assert!(cache.contains_key("/repo/src"));
+    }
+}
+
+#[cfg(test)]
+mod integration_tests {
+    use super::*;
+    use std::sync::atomic::Ordering;
+
+    fn make_git_info(repo_root: &str) -> PaneGitInfo {
+        PaneGitInfo {
+            repo_root: Some(repo_root.into()),
+            branch: Some("main".into()),
+            is_worktree: false,
+        }
+    }
+
+    #[test]
+    fn test_repo_worker_reuses_cached_repo_info_for_subdirs() {
+        use std::sync::atomic::AtomicUsize;
+
+        let (tx, rx) = mpsc::channel();
+        let (path_tx, path_rx) = mpsc::channel();
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let calls = Arc::new(AtomicUsize::new(0));
+
+        let shutdown_clone = shutdown.clone();
+        let calls_clone = calls.clone();
+        let handle = thread::spawn(move || {
+            run_repo_poll_loop(
+                tx,
+                path_rx,
+                shutdown_clone,
+                Duration::from_millis(1),
+                move |_| {
+                    calls_clone.fetch_add(1, Ordering::Relaxed);
+                    make_git_info("/repo")
+                },
+            );
+        });
+
+        path_tx.send("/repo".into()).unwrap();
+        let first = rx.recv_timeout(Duration::from_millis(100)).unwrap();
+        assert_eq!(first.info.repo_root.as_deref(), Some("/repo"));
+
+        path_tx.send("/repo/src/module".into()).unwrap();
+        let second = rx.recv_timeout(Duration::from_millis(100)).unwrap();
+
+        shutdown.store(true, Ordering::Relaxed);
+        handle.join().unwrap();
+
+        assert_eq!(second.info.repo_root.as_deref(), Some("/repo"));
+        assert_eq!(calls.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn test_repo_worker_dedupes_inflight_duplicate_paths() {
+        let (tx, rx) = mpsc::channel();
+        let (path_tx, path_rx) = mpsc::channel();
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (started_tx, started_rx) = mpsc::channel();
+
+        let shutdown_clone = shutdown.clone();
+        let handle = thread::spawn(move || {
+            run_repo_poll_loop(
+                tx,
+                path_rx,
+                shutdown_clone,
+                Duration::from_millis(1),
+                move |_| {
+                    let _ = started_tx.send(());
+                    thread::sleep(Duration::from_millis(40));
+                    make_git_info("/repo")
+                },
+            );
+        });
+
+        path_tx.send("/repo".into()).unwrap();
+        started_rx.recv_timeout(Duration::from_millis(100)).unwrap();
+        path_tx.send("/repo".into()).unwrap();
+
+        let first = rx.recv_timeout(Duration::from_millis(150)).unwrap();
+        let second = rx.recv_timeout(Duration::from_millis(80));
+
+        shutdown.store(true, Ordering::Relaxed);
+        handle.join().unwrap();
+
+        assert_eq!(first.info.repo_root.as_deref(), Some("/repo"));
+        assert!(second.is_err());
     }
 }

@@ -48,26 +48,17 @@ pub fn json_str<'a>(value: &'a serde_json::Value, key: &str) -> &'a str {
 
 /// Get local time as HH:MM string.
 pub fn local_time_hhmm() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
+    let format = time::macros::format_description!("[hour]:[minute]");
 
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-
-    // Get local timezone offset using libc-free approach
-    // We parse the output of `date +%H:%M` for simplicity and portability
-    if let Ok(output) = std::process::Command::new("date").arg("+%H:%M").output()
-        && output.status.success()
+    if let Ok(now) = time::OffsetDateTime::now_local()
+        && let Ok(formatted) = now.format(&format)
     {
-        let s = String::from_utf8_lossy(&output.stdout);
-        return s.trim().to_string();
+        return formatted;
     }
 
-    // Fallback: UTC
-    let hours = (secs / 3600) % 24;
-    let minutes = (secs / 60) % 60;
-    format!("{hours:02}:{minutes:02}")
+    time::OffsetDateTime::now_utc()
+        .format(&format)
+        .unwrap_or_else(|_| "00:00".to_string())
 }
 
 /// Sanitize a string value for storage: replace newlines and pipes with spaces.

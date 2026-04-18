@@ -6,9 +6,11 @@ use ratatui::backend::CrosstermBackend;
 use std::io;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::Sender;
 use std::time::{Duration, Instant};
 use wezterm_agent_dashboard::git;
-use wezterm_agent_dashboard::state::{AppState, BottomTab, Focus, RepoFilter};
+use wezterm_agent_dashboard::group;
+use wezterm_agent_dashboard::state::{AppState, BottomTab, Focus, RefreshActions, RepoFilter};
 use wezterm_agent_dashboard::ui::Dashboard;
 use wezterm_agent_dashboard::user_vars;
 
@@ -74,15 +76,16 @@ fn run_app(
 ) -> io::Result<()> {
     let mut state = AppState::new(dashboard_pane_id);
 
+    // Start repo polling thread
+    let (repo_rx, repo_path_tx, repo_shutdown, _repo_handle) = group::start_repo_poll_thread();
+
     // Start git polling thread
     let git_active = Arc::new(AtomicBool::new(false));
     let (git_rx, git_path_tx, git_shutdown, _git_handle) =
         git::start_git_poll_thread(git_active.clone());
 
     // Initial refresh
-    if let Some(path) = state.refresh() {
-        let _ = git_path_tx.send(path);
-    }
+    dispatch_refresh_actions(state.refresh(), &repo_path_tx, &git_path_tx);
 
     let mut last_refresh = Instant::now();
     let mut last_spinner = Instant::now();
@@ -108,6 +111,7 @@ fn run_app(
                     match (key.code, key.modifiers) {
                         // Quit
                         (KeyCode::Char('q'), _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
+                            repo_shutdown.store(true, Ordering::Relaxed);
                             git_shutdown.store(true, Ordering::Relaxed);
                             break;
                         }
@@ -131,17 +135,13 @@ fn run_app(
                         // Filter navigation (when filter is focused)
                         (KeyCode::Char('h') | KeyCode::Left, _) if state.focus == Focus::Filter => {
                             state.agent_filter = state.agent_filter.prev();
-                            if let Some(path) = state.refresh_local_views() {
-                                let _ = git_path_tx.send(path);
-                            }
+                            send_git_path(state.refresh_local_views(), &git_path_tx);
                         }
                         (KeyCode::Char('l') | KeyCode::Right, _)
                             if state.focus == Focus::Filter =>
                         {
                             state.agent_filter = state.agent_filter.next();
-                            if let Some(path) = state.refresh_local_views() {
-                                let _ = git_path_tx.send(path);
-                            }
+                            send_git_path(state.refresh_local_views(), &git_path_tx);
                         }
 
                         // Agent list navigation
@@ -165,9 +165,7 @@ fn run_app(
                                     state.repo_filter = RepoFilter::Repo(id.clone());
                                 }
                                 state.repo_popup_open = false;
-                                if let Some(path) = state.refresh_local_views() {
-                                    let _ = git_path_tx.send(path);
-                                }
+                                send_git_path(state.refresh_local_views(), &git_path_tx);
                             } else {
                                 state.jump_to_selected();
                             }
@@ -198,9 +196,7 @@ fn run_app(
                                 state.repo_popup_open = false;
                             } else if state.repo_filter != RepoFilter::All {
                                 state.repo_filter = RepoFilter::All;
-                                if let Some(path) = state.refresh_local_views() {
-                                    let _ = git_path_tx.send(path);
-                                }
+                                send_git_path(state.refresh_local_views(), &git_path_tx);
                             }
                         }
 
@@ -232,17 +228,50 @@ fn run_app(
 
         // Periodic refresh
         if last_refresh.elapsed() >= REFRESH_INTERVAL {
-            if let Some(path) = state.refresh() {
-                let _ = git_path_tx.send(path);
-            }
+            dispatch_refresh_actions(state.refresh(), &repo_path_tx, &git_path_tx);
             last_refresh = Instant::now();
         }
 
+        // Check for repo data from background thread
+        let mut repo_updates = Vec::new();
+        while let Ok(update) = repo_rx.try_recv() {
+            repo_updates.push(update);
+        }
+        if !repo_updates.is_empty() {
+            dispatch_refresh_actions(
+                state.apply_repo_info_updates(repo_updates),
+                &repo_path_tx,
+                &git_path_tx,
+            );
+        }
+
         // Check for git data from background thread
-        if let Ok(data) = git_rx.try_recv() {
+        let mut latest_git = None;
+        while let Ok(data) = git_rx.try_recv() {
+            latest_git = Some(data);
+        }
+        if let Some(data) = latest_git {
             state.git = data;
         }
     }
 
     Ok(())
+}
+
+fn dispatch_refresh_actions(
+    actions: RefreshActions,
+    repo_path_tx: &Sender<String>,
+    git_path_tx: &Sender<String>,
+) {
+    for path in actions.repo_paths {
+        let _ = repo_path_tx.send(path);
+    }
+
+    send_git_path(actions.git_path, git_path_tx);
+}
+
+fn send_git_path(path: Option<String>, git_path_tx: &Sender<String>) {
+    if let Some(path) = path {
+        let _ = git_path_tx.send(path);
+    }
 }

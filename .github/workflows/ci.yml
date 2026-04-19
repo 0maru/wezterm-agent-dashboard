@@ -38,7 +38,7 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
-      - run: cargo test -- --skip integration_tests::
+      - run: 'cargo test -- --skip integration_tests::'
 
   test-integration:
     runs-on: ubuntu-latest
@@ -53,7 +53,7 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
-      - run: cargo test integration_tests::
+      - run: 'cargo test integration_tests::'
 
   build:
     needs: [quality, test-unit, test-integration]

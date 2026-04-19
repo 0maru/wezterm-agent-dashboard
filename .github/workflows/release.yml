@@ -135,6 +135,7 @@ jobs:
 
   update-homebrew:
     needs: release
+    if: ${{ secrets.HOMEBREW_TAP_TOKEN != '' }}
     runs-on: ubuntu-latest
     steps:
       - name: Get version

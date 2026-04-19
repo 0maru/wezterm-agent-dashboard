@@ -1,0 +1,13 @@
+prefix_rule(
+    pattern = ["cargo"],
+    decision = "allow",
+    justification = "Rust 開発で使う cargo コマンドを許可する",
+    match = [
+        "cargo test",
+        "cargo build --release",
+        "cargo fmt --check",
+    ],
+    not_match = [
+        "git cargo test",
+    ],
+)

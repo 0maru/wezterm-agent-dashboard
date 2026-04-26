@@ -144,6 +144,19 @@ fn run_app(
                             send_git_path(state.refresh_local_views(), &git_path_tx);
                         }
 
+                        // Popup navigation
+                        (KeyCode::Char('j') | KeyCode::Down, _) if state.repo_popup_open => {
+                            let max = state.repo_entries().len();
+                            if state.repo_popup_selected < max {
+                                state.repo_popup_selected += 1;
+                            }
+                        }
+                        (KeyCode::Char('k') | KeyCode::Up, _)
+                            if state.repo_popup_open && state.repo_popup_selected > 0 =>
+                        {
+                            state.repo_popup_selected -= 1;
+                        }
+
                         // Agent list navigation
                         (KeyCode::Char('j') | KeyCode::Down, _) if state.focus == Focus::Agents => {
                             state.select_next();
@@ -175,19 +188,6 @@ fn run_app(
                         (KeyCode::Char('r'), _) if state.focus == Focus::Agents => {
                             state.repo_popup_open = !state.repo_popup_open;
                             state.repo_popup_selected = 0;
-                        }
-
-                        // Popup navigation
-                        (KeyCode::Char('j') | KeyCode::Down, _) if state.repo_popup_open => {
-                            let max = state.repo_entries().len();
-                            if state.repo_popup_selected < max {
-                                state.repo_popup_selected += 1;
-                            }
-                        }
-                        (KeyCode::Char('k') | KeyCode::Up, _)
-                            if state.repo_popup_open && state.repo_popup_selected > 0 =>
-                        {
-                            state.repo_popup_selected -= 1;
                         }
 
                         // Escape closes popup or clears filter

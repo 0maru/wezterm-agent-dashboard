@@ -20,6 +20,7 @@ wezterm-agent-dashboard displays a lightweight status bar summary and a split-pa
 - Task progress display based on `TaskCreate` / `TaskUpdate` activity
 - Repository grouping, repository filter popup, Git branch and worktree display
 - Git panel for branch, ahead/behind, changed files, diff stats, remote URL, and GitHub PR number
+- Optional inactive tab icon/color styling for agent status
 - Support for multiple concurrent agent sessions
 
 ## Requirements
@@ -57,6 +58,7 @@ local config = wezterm.config_builder()
 -- Load the agent dashboard plugin
 local agent_dashboard = wezterm.plugin.require("https://github.com/0maru/wezterm-agent-dashboard")
 
+agent_dashboard.setup()
 agent_dashboard.apply_to_config(config)
 
 return config
@@ -94,12 +96,24 @@ agent_dashboard.setup({
   sidebar_position = "Right",
   show_status_bar = true,
   binary_name = "wezterm-agent-dashboard",
+  tab_status = {
+    enabled = true,
+    reset_on_active = true,
+    states = {
+      notification = { icon = "🔔", bg_color = "#3b2f00", fg_color = "#ffd75f" },
+      error = { icon = "✕", bg_color = "#3a1f1f", fg_color = "#ff5f5f" },
+      waiting = { icon = "◐", bg_color = "#332b12", fg_color = "#ffd75f" },
+      running = { icon = "●", bg_color = "#16351f", fg_color = "#87d787" },
+    },
+  },
 })
 
 agent_dashboard.apply_to_config(config)
 ```
 
 `apply_to_config()` mutates the WezTerm config by registering the status handler and inserting the toggle keybinding.
+
+When `tab_status.enabled` is true, inactive tabs containing agent panes can show an icon and tab color based on `agent_attention` / `agent_status`. Notification styling is marked as seen when the tab becomes active.
 
 ## CLI
 

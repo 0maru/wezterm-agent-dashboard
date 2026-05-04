@@ -133,14 +133,16 @@ agent_dashboard.apply_to_config(config)
 
 | イベント | 効果 |
 |---|---|
-| `user-prompt-submit` | エージェントを `running` に設定し、ユーザープロンプトを記録 |
+| `user-prompt-submit` | エージェントを `running` に設定し、ユーザープロンプトと turn 開始時刻を記録 |
 | `notification` | エージェントを `waiting` に設定（権限要求など） |
 | `stop` | エージェントを `idle` に設定し、最後の応答を記録 |
 | `stop-failure` | エージェントを `error` に設定 |
-| `session-start` | エージェント状態をリセット |
+| `session-start` | エージェント状態をリセットし、session 開始時刻を記録 |
 | `session-end` | 状態とアクティビティログをクリア |
 | `activity-log` | ツール使用のエントリをアクティビティログに追加 |
 | `subagent-start` / `subagent-stop` | 起動中のサブエージェントを追跡 |
+
+エージェント行には `session <elapsed>` として `session-start` からの経過時間を表示します。turn の実行中、権限待ち中、またはエラー中は、直近の `user-prompt-submit` からの経過時間も `turn <elapsed>` として表示します。既存の `agent_started_at` は古い hook 連携向けに turn 開始時刻の別名として残しています。
 
 Codex のフックでは `claude` の代わりに `codex` を渡してください。
 

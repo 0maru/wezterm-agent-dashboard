@@ -369,6 +369,8 @@ mod grouping_tests {
             prompt: String::new(),
             prompt_is_response: false,
             started_at: None,
+            session_started_at: None,
+            turn_started_at: None,
             wait_reason: String::new(),
             permission_mode: PermissionMode::Default,
             subagents: Vec::new(),

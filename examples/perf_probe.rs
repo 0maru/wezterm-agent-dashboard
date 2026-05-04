@@ -202,6 +202,8 @@ fn make_raw_panes(count: usize) -> Vec<RawWezTermPane> {
             user_vars.insert("agent_prompt".into(), format!("prompt-{idx}"));
             user_vars.insert("agent_cwd".into(), format!("/tmp/project-{idx}"));
             user_vars.insert("agent_started_at".into(), "1700000000".into());
+            user_vars.insert("agent_session_started_at".into(), "1699999000".into());
+            user_vars.insert("agent_turn_started_at".into(), "1700000000".into());
             user_vars.insert("agent_subagents".into(), "worker,worker".into());
 
             RawWezTermPane {
@@ -243,6 +245,8 @@ fn make_workspaces(
             prompt: "benchmark".into(),
             prompt_is_response: false,
             started_at: Some(1_700_000_000),
+            session_started_at: Some(1_699_999_000),
+            turn_started_at: Some(1_700_000_000),
             wait_reason: String::new(),
             permission_mode: PermissionMode::Default,
             subagents: Vec::new(),

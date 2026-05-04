@@ -69,6 +69,8 @@ return config
 |---|---|
 | `LEADER+e` | ダッシュボードサイドバーの表示切り替え |
 
+CLI からは `wezterm-agent-dashboard toggle [percent] [--position Right|Left|Top|Bottom]` で同じ操作ができます。既存の `toggle 20` 形式は sidebar percent 指定として引き続き利用できます。CLI とキーバインドの toggle はどちらも現在の tab のみを対象にします。
+
 ## 設定
 
 `setup` にオプションを渡すことでカスタマイズできます：

@@ -69,6 +69,8 @@ Once installed, the dashboard status bar appears automatically when an AI agent 
 |---|---|
 | `LEADER+e` | Toggle dashboard sidebar |
 
+The CLI equivalent is `wezterm-agent-dashboard toggle [percent] [--position Right|Left|Top|Bottom]`. The legacy `toggle 20` form still sets the sidebar percent. CLI and keybinding toggles both operate on the current tab only.
+
 ## Configuration
 
 You can customize the plugin by passing options to `setup`:

@@ -2,7 +2,11 @@ use indexmap::IndexMap;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fmt;
+use std::fs;
+use std::path::PathBuf;
 use std::process::Command;
+
+const USER_VARS_SNAPSHOT_MAX_AGE_SECS: u64 = 10;
 
 // ---------------------------------------------------------------------------
 // Enums
@@ -180,6 +184,20 @@ pub struct RawWezTermPane {
     pub user_vars: HashMap<String, String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct PaneUserVarsSnapshot {
+    updated_at: Option<u64>,
+    #[serde(default)]
+    panes: Vec<PaneUserVarsEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PaneUserVarsEntry {
+    pane_id: u64,
+    #[serde(default)]
+    user_vars: HashMap<String, String>,
+}
+
 // ---------------------------------------------------------------------------
 // Query functions
 // ---------------------------------------------------------------------------
@@ -196,7 +214,11 @@ pub fn query_all_panes() -> Vec<RawWezTermPane> {
         _ => return Vec::new(),
     };
 
-    serde_json::from_slice(&output.stdout).unwrap_or_default()
+    let mut panes: Vec<RawWezTermPane> = serde_json::from_slice(&output.stdout).unwrap_or_default();
+    if let Some(snapshot) = read_pane_user_vars_snapshot() {
+        merge_user_vars_snapshot(&mut panes, &snapshot);
+    }
+    panes
 }
 
 /// Build the workspace→tab→pane hierarchy from raw panes.
@@ -338,6 +360,85 @@ fn parse_pane_info(raw: &RawWezTermPane) -> Option<PaneInfo> {
         permission_mode,
         subagents,
     })
+}
+
+fn pane_user_vars_snapshot_path() -> PathBuf {
+    if let Ok(path) = std::env::var("WEZTERM_AGENT_DASHBOARD_STATE")
+        && !path.is_empty()
+    {
+        return PathBuf::from(path);
+    }
+
+    let user = std::env::var("USER")
+        .or_else(|_| std::env::var("USERNAME"))
+        .unwrap_or_else(|_| "default".to_string());
+    let user = sanitize_state_path_component(&user);
+    PathBuf::from(format!("/tmp/wezterm-agent-dashboard-panes-{user}.json"))
+}
+
+fn sanitize_state_path_component(value: &str) -> String {
+    let sanitized: String = value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-') {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect();
+
+    if sanitized.is_empty() {
+        "default".to_string()
+    } else {
+        sanitized
+    }
+}
+
+fn read_pane_user_vars_snapshot() -> Option<PaneUserVarsSnapshot> {
+    let content = fs::read_to_string(pane_user_vars_snapshot_path()).ok()?;
+    let snapshot: PaneUserVarsSnapshot = serde_json::from_str(&content).ok()?;
+
+    if !snapshot_is_fresh(snapshot.updated_at, current_epoch()) {
+        return None;
+    }
+
+    Some(snapshot)
+}
+
+fn snapshot_is_fresh(updated_at: Option<u64>, now: u64) -> bool {
+    let Some(updated_at) = updated_at else {
+        return false;
+    };
+
+    now.saturating_sub(updated_at) <= USER_VARS_SNAPSHOT_MAX_AGE_SECS
+}
+
+fn merge_user_vars_snapshot(raw_panes: &mut [RawWezTermPane], snapshot: &PaneUserVarsSnapshot) {
+    let user_vars_by_pane: HashMap<u64, &HashMap<String, String>> = snapshot
+        .panes
+        .iter()
+        .map(|pane| (pane.pane_id, &pane.user_vars))
+        .collect();
+
+    for raw in raw_panes {
+        let Some(user_vars) = user_vars_by_pane.get(&raw.pane_id) else {
+            continue;
+        };
+
+        raw.user_vars.extend(
+            user_vars
+                .iter()
+                .map(|(key, value)| (key.clone(), value.clone())),
+        );
+    }
+}
+
+fn current_epoch() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
 }
 
 /// Simple URL decoding for file:// paths (handles %20, etc.)
@@ -520,6 +621,93 @@ mod tests {
         assert_eq!(result[0].tabs[0].panes.len(), 1);
         assert_eq!(result[0].tabs[0].panes[0].agent, AgentType::Claude);
         assert_eq!(result[0].tabs[0].panes[0].status, PaneStatus::Running);
+    }
+
+    #[test]
+    fn test_merge_user_vars_snapshot_adds_missing_agent_vars() {
+        let mut raw = vec![RawWezTermPane {
+            window_id: 0,
+            tab_id: 0,
+            tab_title: "test".to_string(),
+            pane_id: 1,
+            workspace: "default".to_string(),
+            title: "codex".to_string(),
+            cwd: "file:///home/user/project".to_string(),
+            is_active: true,
+            is_zoomed: false,
+            tty_name: String::new(),
+            user_vars: HashMap::new(),
+        }];
+        let mut user_vars = HashMap::new();
+        user_vars.insert("agent_type".to_string(), "codex".to_string());
+        user_vars.insert("agent_status".to_string(), "waiting".to_string());
+        user_vars.insert("agent_prompt".to_string(), "review this".to_string());
+
+        let snapshot = PaneUserVarsSnapshot {
+            updated_at: Some(current_epoch()),
+            panes: vec![PaneUserVarsEntry {
+                pane_id: 1,
+                user_vars,
+            }],
+        };
+
+        merge_user_vars_snapshot(&mut raw, &snapshot);
+        let result = build_workspaces(raw, None);
+
+        assert_eq!(result.len(), 1);
+        let pane = &result[0].tabs[0].panes[0];
+        assert_eq!(pane.agent, AgentType::Codex);
+        assert_eq!(pane.status, PaneStatus::Waiting);
+        assert_eq!(pane.prompt, "review this");
+    }
+
+    #[test]
+    fn test_merge_user_vars_snapshot_only_matches_same_pane_id() {
+        let mut raw = vec![RawWezTermPane {
+            window_id: 0,
+            tab_id: 0,
+            tab_title: "test".to_string(),
+            pane_id: 1,
+            workspace: "default".to_string(),
+            title: "zsh".to_string(),
+            cwd: "file:///home/user/project".to_string(),
+            is_active: true,
+            is_zoomed: false,
+            tty_name: String::new(),
+            user_vars: HashMap::new(),
+        }];
+        let mut user_vars = HashMap::new();
+        user_vars.insert("agent_type".to_string(), "claude".to_string());
+
+        let snapshot = PaneUserVarsSnapshot {
+            updated_at: Some(current_epoch()),
+            panes: vec![PaneUserVarsEntry {
+                pane_id: 99,
+                user_vars,
+            }],
+        };
+
+        merge_user_vars_snapshot(&mut raw, &snapshot);
+        let result = build_workspaces(raw, None);
+
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_snapshot_is_fresh_requires_recent_timestamp() {
+        let now = 100;
+
+        assert!(snapshot_is_fresh(Some(95), now));
+        assert!(snapshot_is_fresh(Some(100), now));
+        assert!(!snapshot_is_fresh(Some(89), now));
+        assert!(!snapshot_is_fresh(None, now));
+    }
+
+    #[test]
+    fn test_sanitize_state_path_component() {
+        assert_eq!(sanitize_state_path_component("user.name"), "user.name");
+        assert_eq!(sanitize_state_path_component("../bad/user"), ".._bad_user");
+        assert_eq!(sanitize_state_path_component(""), "default");
     }
 
     #[test]

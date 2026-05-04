@@ -9,7 +9,7 @@ use serde_json::Value;
 /// - Agent → description
 /// - Task tools → task ID + subject/status
 pub fn extract_tool_label(tool_name: &str, tool_input: &Value, tool_response: &Value) -> String {
-    match tool_name {
+    let label = match tool_name {
         "Read" | "Edit" | "Write" | "NotebookEdit" => {
             let key = if tool_name == "NotebookEdit" {
                 "notebook_path"
@@ -45,8 +45,7 @@ pub fn extract_tool_label(tool_name: &str, tool_input: &Value, tool_response: &V
 
         "TaskCreate" => {
             let subject = json_str(tool_input, "subject");
-            // Try to get the created task ID from the response
-            let id = json_str(tool_response, "taskId");
+            let id = first_json_str(tool_response, &["taskId", "task_id", "id"]);
             if !id.is_empty() {
                 format!("#{id} {subject}")
             } else {
@@ -55,7 +54,7 @@ pub fn extract_tool_label(tool_name: &str, tool_input: &Value, tool_response: &V
         }
 
         "TaskUpdate" => {
-            let id = json_str(tool_input, "taskId");
+            let id = first_json_str(tool_input, &["taskId", "task_id", "id"]);
             let status = json_str(tool_input, "status");
             if !status.is_empty() {
                 format!("{status} #{id}")
@@ -64,8 +63,31 @@ pub fn extract_tool_label(tool_name: &str, tool_input: &Value, tool_response: &V
             }
         }
 
+        "TaskCreated" => {
+            let subject = first_json_str(tool_input, &["subject", "title", "name"]);
+            let mut id = first_json_str(tool_input, &["taskId", "task_id", "id"]);
+            if id.is_empty() {
+                id = first_json_str(tool_response, &["taskId", "task_id", "id"]);
+            }
+            if !id.is_empty() {
+                format!("#{id} {subject}")
+            } else {
+                subject.to_string()
+            }
+        }
+
+        "TaskCompleted" => {
+            let mut id = first_json_str(tool_input, &["taskId", "task_id", "id"]);
+            if id.is_empty() {
+                id = first_json_str(tool_response, &["taskId", "task_id", "id"]);
+            }
+            format!("completed #{id}")
+        }
+
+        "TodoWrite" => todo_write_label(tool_input),
+
         "TaskGet" | "TaskStop" | "TaskOutput" => {
-            let id = json_str(tool_input, "taskId");
+            let id = first_json_str(tool_input, &["taskId", "task_id", "id"]);
             format!("#{id}")
         }
 
@@ -92,11 +114,74 @@ pub fn extract_tool_label(tool_name: &str, tool_input: &Value, tool_response: &V
         "EnterWorktree" => json_str(tool_input, "name").to_string(),
 
         _ => String::new(),
-    }
+    };
+
+    append_error_label(label, tool_response)
 }
 
 fn json_str<'a>(value: &'a Value, key: &str) -> &'a str {
     value.get(key).and_then(|v| v.as_str()).unwrap_or("")
+}
+
+fn first_json_str<'a>(value: &'a Value, keys: &[&str]) -> &'a str {
+    keys.iter()
+        .filter_map(|key| value.get(*key).and_then(Value::as_str))
+        .find(|value| !value.is_empty())
+        .unwrap_or("")
+}
+
+fn todo_write_label(tool_input: &Value) -> String {
+    let Some(todos) = tool_input.get("todos").and_then(Value::as_array) else {
+        return String::new();
+    };
+
+    todos
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, todo)| {
+            let status = json_str(todo, "status");
+            if status.is_empty() {
+                None
+            } else {
+                Some(format!("{status} #{}", idx + 1))
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn append_error_label(label: String, tool_response: &Value) -> String {
+    let Some(error) = response_error(tool_response) else {
+        return label;
+    };
+
+    if label.is_empty() {
+        format!("error: {error}")
+    } else {
+        format!("{label} error: {error}")
+    }
+}
+
+fn response_error(value: &Value) -> Option<&str> {
+    if let Some(error) = value.get("error") {
+        if let Some(error) = error.as_str().filter(|error| !error.is_empty()) {
+            return Some(error);
+        }
+        if let Some(error) = error.get("message").and_then(Value::as_str)
+            && !error.is_empty()
+        {
+            return Some(error);
+        }
+    }
+
+    if value.get("success").and_then(Value::as_bool) == Some(false) {
+        let message = first_json_str(value, &["message", "stderr"]);
+        if !message.is_empty() {
+            return Some(message);
+        }
+    }
+
+    None
 }
 
 #[cfg(test)]
@@ -159,6 +244,50 @@ mod tests {
         assert_eq!(
             extract_tool_label("TaskUpdate", &input, &Value::Null),
             "completed #3"
+        );
+    }
+
+    #[test]
+    fn test_task_created_label() {
+        let input = json!({"id": "9", "title": "Map files"});
+        assert_eq!(
+            extract_tool_label("TaskCreated", &input, &Value::Null),
+            "#9 Map files"
+        );
+    }
+
+    #[test]
+    fn test_task_completed_label() {
+        let input = json!({"task_id": "9"});
+        assert_eq!(
+            extract_tool_label("TaskCompleted", &input, &Value::Null),
+            "completed #9"
+        );
+    }
+
+    #[test]
+    fn test_todo_write_label() {
+        let input = json!({
+            "todos": [
+                {"content": "Inspect", "status": "completed"},
+                {"content": "Patch", "status": "in_progress"},
+                {"content": "Verify", "status": "pending"}
+            ]
+        });
+
+        assert_eq!(
+            extract_tool_label("TodoWrite", &input, &Value::Null),
+            "completed #1, in_progress #2, pending #3"
+        );
+    }
+
+    #[test]
+    fn test_failed_tool_label_keeps_error() {
+        let response = json!({"success": false, "message": "permission denied"});
+
+        assert_eq!(
+            extract_tool_label("UnknownTool", &json!({}), &response),
+            "error: permission denied"
         );
     }
 

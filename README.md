@@ -14,7 +14,7 @@ wezterm-agent-dashboard displays a status bar and dashboard overlay inside [WezT
 
 - Real-time monitoring of AI agent sessions
 - Token usage and cost tracking
-- Active task and tool call visualization
+- Task/Todo progress and tool call visualization
 - Lightweight status bar integration with WezTerm
 - Optional inactive tab icon/color styling for agent status
 - Dashboard overlay toggled via keybinding
@@ -141,6 +141,8 @@ The third argument passed to `hook` maps to the following agent state transition
 | `session-end` | Clear state and activity log |
 | `activity-log` | Append a tool-use entry to the activity log |
 | `subagent-start` / `subagent-stop` | Track active subagents |
+
+Task progress is reconstructed from TaskCreate/TaskUpdate style events and TodoWrite snapshots when those tool calls are present. Tool failures are kept in the activity log label when the hook payload includes an error response.
 
 Replace `claude` with `codex` for Codex hooks.
 

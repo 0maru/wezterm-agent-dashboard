@@ -1,10 +1,11 @@
 use crate::cli::label::extract_tool_label;
 use crate::cli::{json_str, local_time_hhmm, read_stdin_json, sanitize_value};
 use crate::user_vars;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// All user variable names managed by the dashboard.
@@ -48,13 +49,13 @@ pub fn cmd_hook(args: &[String]) -> i32 {
     match event {
         "user-prompt-submit" => handle_user_prompt_submit(agent, &input),
         "notification" => handle_notification(agent, &input),
-        "stop" => handle_stop(agent, &input),
+        "stop" => handle_stop(&pane_id, agent, &input),
         "stop-failure" => handle_stop_failure(agent, &input),
-        "session-start" => handle_session_start(agent),
+        "session-start" => handle_session_start(&pane_id, agent),
         "session-end" => handle_session_end(&pane_id),
         "activity-log" => handle_activity_log(&pane_id, &input),
-        "subagent-start" => handle_subagent_start(&input),
-        "subagent-stop" => handle_subagent_stop(&input),
+        "subagent-start" => handle_subagent_start(&pane_id, &input),
+        "subagent-stop" => handle_subagent_stop(&pane_id, &input),
         _ => {}
     }
 
@@ -99,8 +100,9 @@ fn handle_notification(agent: &str, input: &Value) {
     ]);
 }
 
-fn handle_stop(agent: &str, input: &Value) {
+fn handle_stop(pane_id: &str, agent: &str, input: &Value) {
     let response = json_str(input, "last_assistant_message");
+    let _ = fs::remove_file(subagent_state_path(pane_id));
 
     let mut vars = vec![
         ("agent_type", agent),
@@ -138,7 +140,9 @@ fn handle_stop_failure(agent: &str, input: &Value) {
     }
 }
 
-fn handle_session_start(agent: &str) {
+fn handle_session_start(pane_id: &str, agent: &str) {
+    let _ = fs::remove_file(subagent_state_path(pane_id));
+
     user_vars::clear_user_vars(ALL_AGENT_VARS);
     user_vars::set_user_vars(&[("agent_type", agent), ("agent_status", "idle")]);
 }
@@ -149,6 +153,7 @@ fn handle_session_end(pane_id: &str) {
     // Delete the activity log file
     let log_path = activity_log_path(pane_id);
     let _ = fs::remove_file(log_path);
+    let _ = fs::remove_file(subagent_state_path(pane_id));
 }
 
 fn handle_activity_log(pane_id: &str, input: &Value) {
@@ -178,42 +183,21 @@ fn handle_activity_log(pane_id: &str, input: &Value) {
     write_activity_entry(pane_id, tool_name, &label);
 }
 
-fn handle_subagent_start(input: &Value) {
-    let agent_type = json_str(input, "agent_type");
-    if agent_type.is_empty() {
+fn handle_subagent_start(pane_id: &str, input: &Value) {
+    let Some(entry) = subagent_entry_from_input(input) else {
         return;
-    }
-
-    // Read current subagents, append new one
-    // Since we can't read user vars from inside the pane,
-    // we use a simple file-based approach or just set the new value
-    // The hook receives the full state, so we append
-    let current = json_str(input, "current_subagents");
-    let new_list = if current.is_empty() {
-        agent_type.to_string()
-    } else {
-        format!("{current},{agent_type}")
     };
 
-    user_vars::set_user_var("agent_subagents", &new_list);
+    let mut entries = load_subagent_entries(pane_id, input);
+    upsert_subagent_entry(&mut entries, entry);
+
+    persist_subagent_entries(pane_id, &entries);
 }
 
-fn handle_subagent_stop(input: &Value) {
-    let agent_type = json_str(input, "agent_type");
-    if agent_type.is_empty() {
-        return;
-    }
-
-    let current = json_str(input, "current_subagents");
-    let mut parts: Vec<&str> = current.split(',').filter(|s| !s.is_empty()).collect();
-
-    // Remove last occurrence of this agent type
-    if let Some(pos) = parts.iter().rposition(|&s| s == agent_type) {
-        parts.remove(pos);
-    }
-
-    let new_list = parts.join(",");
-    user_vars::set_user_var("agent_subagents", &new_list);
+fn handle_subagent_stop(pane_id: &str, input: &Value) {
+    let mut entries = load_subagent_entries(pane_id, input);
+    remove_subagent_entry(&mut entries, input);
+    persist_subagent_entries(pane_id, &entries);
 }
 
 // ---------------------------------------------------------------------------
@@ -251,6 +235,115 @@ fn current_epoch() -> u64 {
 
 fn activity_log_path(pane_id: &str) -> PathBuf {
     PathBuf::from(format!("/tmp/wezterm-agent-activity-{pane_id}.log"))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct SubagentEntry {
+    id: String,
+    label: String,
+}
+
+fn subagent_state_path(pane_id: &str) -> PathBuf {
+    PathBuf::from(format!("/tmp/wezterm-agent-subagents-{pane_id}.json"))
+}
+
+fn load_subagent_entries(pane_id: &str, input: &Value) -> Vec<SubagentEntry> {
+    read_subagent_entries(&subagent_state_path(pane_id))
+        .unwrap_or_else(|| legacy_subagent_entries(input))
+}
+
+fn read_subagent_entries(path: &Path) -> Option<Vec<SubagentEntry>> {
+    let content = fs::read_to_string(path).ok()?;
+    serde_json::from_str(&content).ok()
+}
+
+fn persist_subagent_entries(pane_id: &str, entries: &[SubagentEntry]) {
+    let path = subagent_state_path(pane_id);
+    if entries.is_empty() {
+        let _ = fs::remove_file(path);
+    } else if let Ok(content) = serde_json::to_string(entries) {
+        let _ = fs::write(path, content);
+    }
+
+    user_vars::set_user_var("agent_subagents", &subagent_labels(entries));
+}
+
+fn subagent_entry_from_input(input: &Value) -> Option<SubagentEntry> {
+    let id = subagent_id(input);
+    let label = subagent_label(input).or_else(|| id.clone())?;
+    let id = id.unwrap_or_else(|| format!("legacy:{}", current_epoch_nanos()));
+
+    Some(SubagentEntry { id, label })
+}
+
+fn upsert_subagent_entry(entries: &mut Vec<SubagentEntry>, entry: SubagentEntry) {
+    if let Some(pos) = entries.iter().position(|current| current.id == entry.id) {
+        entries[pos] = entry;
+    } else {
+        entries.push(entry);
+    }
+}
+
+fn remove_subagent_entry(entries: &mut Vec<SubagentEntry>, input: &Value) {
+    if let Some(id) = subagent_id(input) {
+        entries.retain(|entry| entry.id != id);
+        return;
+    }
+
+    if let Some(label) = subagent_label(input).as_deref()
+        && let Some(pos) = entries.iter().rposition(|entry| entry.label == label)
+    {
+        entries.remove(pos);
+    }
+}
+
+fn subagent_id(input: &Value) -> Option<String> {
+    first_json_string(input, &["agent_id", "task_id", "id"])
+}
+
+fn subagent_label(input: &Value) -> Option<String> {
+    first_json_string(input, &["agent_type", "nickname", "name", "teammate_name"])
+        .map(|label| sanitize_subagent_label(&label))
+        .filter(|label| !label.is_empty())
+}
+
+fn first_json_string(input: &Value, keys: &[&str]) -> Option<String> {
+    keys.iter()
+        .filter_map(|key| input.get(*key).and_then(Value::as_str))
+        .find(|value| !value.is_empty())
+        .map(ToString::to_string)
+}
+
+fn legacy_subagent_entries(input: &Value) -> Vec<SubagentEntry> {
+    json_str(input, "current_subagents")
+        .split(',')
+        .map(sanitize_subagent_label)
+        .filter(|label| !label.is_empty())
+        .enumerate()
+        .map(|(idx, label)| SubagentEntry {
+            id: format!("legacy:{idx}:{label}"),
+            label,
+        })
+        .collect()
+}
+
+fn subagent_labels(entries: &[SubagentEntry]) -> String {
+    entries
+        .iter()
+        .map(|entry| entry.label.as_str())
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn sanitize_subagent_label(label: &str) -> String {
+    sanitize_value(label).replace(',', " ")
+}
+
+fn current_epoch_nanos() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos()
 }
 
 fn write_activity_entry(pane_id: &str, tool_name: &str, label: &str) {
@@ -327,6 +420,155 @@ mod tests {
     fn test_activity_log_path() {
         let path = activity_log_path("42");
         assert_eq!(path, PathBuf::from("/tmp/wezterm-agent-activity-42.log"));
+    }
+
+    #[test]
+    fn test_subagent_entry_from_input_uses_agent_id_and_type() {
+        let input = serde_json::json!({
+            "agent_id": "agent-abc",
+            "agent_type": "Explore"
+        });
+
+        let entry = subagent_entry_from_input(&input).unwrap();
+
+        assert_eq!(
+            entry,
+            SubagentEntry {
+                id: "agent-abc".into(),
+                label: "Explore".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn test_legacy_subagent_entries_from_current_subagents() {
+        let input = serde_json::json!({
+            "current_subagents": "Explore,Review\nAgent,Plan|Mode"
+        });
+
+        let entries = legacy_subagent_entries(&input);
+
+        assert_eq!(subagent_labels(&entries), "Explore,Review Agent,Plan Mode");
+    }
+
+    #[test]
+    fn test_subagent_state_roundtrip() {
+        let path = std::env::temp_dir().join(format!(
+            "wezterm-agent-dashboard-subagents-{}-{}.json",
+            std::process::id(),
+            current_epoch_nanos()
+        ));
+        let entries = vec![
+            SubagentEntry {
+                id: "agent-a".into(),
+                label: "Explore".into(),
+            },
+            SubagentEntry {
+                id: "agent-b".into(),
+                label: "Review".into(),
+            },
+        ];
+        fs::write(&path, serde_json::to_string(&entries).unwrap()).unwrap();
+
+        let entries = read_subagent_entries(&path).unwrap();
+        assert_eq!(subagent_labels(&entries), "Explore,Review");
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_subagent_upsert_replaces_duplicate_id() {
+        let mut entries = vec![SubagentEntry {
+            id: "agent-a".into(),
+            label: "Explore".into(),
+        }];
+
+        upsert_subagent_entry(
+            &mut entries,
+            SubagentEntry {
+                id: "agent-a".into(),
+                label: "Review".into(),
+            },
+        );
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(subagent_labels(&entries), "Review");
+    }
+
+    #[test]
+    fn test_subagent_remove_by_id() {
+        let mut entries = vec![
+            SubagentEntry {
+                id: "a".into(),
+                label: "Explore".into(),
+            },
+            SubagentEntry {
+                id: "b".into(),
+                label: "Explore".into(),
+            },
+            SubagentEntry {
+                id: "c".into(),
+                label: "Plan".into(),
+            },
+        ];
+
+        remove_subagent_entry(
+            &mut entries,
+            &serde_json::json!({"agent_id": "b", "agent_type": "Explore"}),
+        );
+
+        assert_eq!(subagent_labels(&entries), "Explore,Plan");
+        assert_eq!(entries[0].id, "a");
+    }
+
+    #[test]
+    fn test_subagent_unknown_id_does_not_remove_by_label() {
+        let mut entries = vec![SubagentEntry {
+            id: "a".into(),
+            label: "Explore".into(),
+        }];
+
+        remove_subagent_entry(
+            &mut entries,
+            &serde_json::json!({"agent_id": "missing", "agent_type": "Explore"}),
+        );
+
+        assert_eq!(subagent_labels(&entries), "Explore");
+    }
+
+    #[test]
+    fn test_subagent_remove_without_id_removes_last_matching_label() {
+        let mut entries = vec![
+            SubagentEntry {
+                id: "a".into(),
+                label: "Explore".into(),
+            },
+            SubagentEntry {
+                id: "b".into(),
+                label: "Explore".into(),
+            },
+            SubagentEntry {
+                id: "c".into(),
+                label: "Plan".into(),
+            },
+        ];
+
+        remove_subagent_entry(&mut entries, &serde_json::json!({"agent_type": "Explore"}));
+
+        assert_eq!(subagent_labels(&entries), "Explore,Plan");
+        assert_eq!(entries[0].id, "a");
+    }
+
+    #[test]
+    fn test_subagent_stop_falls_back_to_current_subagents() {
+        let input = serde_json::json!({
+            "agent_type": "Review",
+            "current_subagents": "Explore,Review"
+        });
+        let mut entries = legacy_subagent_entries(&input);
+
+        remove_subagent_entry(&mut entries, &input);
+
+        assert_eq!(subagent_labels(&entries), "Explore");
     }
 
     #[test]

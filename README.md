@@ -127,22 +127,54 @@ Add the following to `~/.claude/settings.json`:
 }
 ```
 
+### Codex
+
+If your Codex build requires the hooks feature flag, enable it in `~/.codex/config.toml`:
+
+```toml
+[features]
+codex_hooks = true
+```
+
+Add the following to `~/.codex/hooks.json`:
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "wezterm-agent-dashboard hook codex SessionStart" }] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "wezterm-agent-dashboard hook codex UserPromptSubmit" }] }
+    ],
+    "PostToolUse": [
+      { "hooks": [{ "type": "command", "command": "wezterm-agent-dashboard hook codex PostToolUse" }] }
+    ],
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "wezterm-agent-dashboard hook codex Stop" }] }
+    ]
+  }
+}
+```
+
+You can add a Codex `matcher` to `PostToolUse` if you only want to log specific tools.
+
 ### Supported events
 
 The third argument passed to `hook` maps to the following agent state transitions:
 
-| Event | Effect |
+| Event / hook alias | Effect |
 |---|---|
-| `user-prompt-submit` | Mark agent as `running`; record the user prompt |
-| `notification` | Mark agent as `waiting` (e.g. permission request) |
-| `stop` | Mark agent as `idle`; record the last response |
-| `stop-failure` | Mark agent as `error` |
-| `session-start` | Reset agent state |
-| `session-end` | Clear state and activity log |
-| `activity-log` | Append a tool-use entry to the activity log |
+| `user-prompt-submit` / `UserPromptSubmit` | Mark agent as `running`; record the user prompt |
+| `notification` / `Notification` | Mark agent as `waiting` (e.g. permission request) |
+| `stop` / `Stop` | Mark agent as `idle`; record the last response |
+| `stop-failure` / `StopFailure` | Mark agent as `error` |
+| `session-start` / `SessionStart` | Reset agent state |
+| `session-end` / `SessionEnd` | Clear state and activity log |
+| `activity-log` / `PreToolUse` / `PostToolUse` / `PostToolUseFailure` | Append a tool-use entry to the activity log |
 | `subagent-start` / `subagent-stop` | Track active subagents |
 
-Replace `claude` with `codex` for Codex hooks.
+Codex hook availability depends on the Codex CLI version. The recommended Codex setup above uses `SessionStart`, `UserPromptSubmit`, `PostToolUse`, and `Stop`. If your Codex build does not expose `Notification`, `SessionEnd`, or `PostToolUseFailure`, the dashboard cannot receive those transitions from Codex; it will reset on the next `SessionStart` and mark the pane idle on `Stop`. `PreToolUse` is accepted as an alias, but it is not included in the default example to avoid duplicate activity entries when `PostToolUse` is also configured.
 
 ### Legacy: `hook.sh` wrapper
 

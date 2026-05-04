@@ -21,6 +21,19 @@ const ALL_AGENT_VARS: &[&str] = &[
     "agent_attention",
 ];
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum HookEvent {
+    UserPromptSubmit,
+    Notification,
+    Stop,
+    StopFailure,
+    SessionStart,
+    SessionEnd,
+    ActivityLog,
+    SubagentStart,
+    SubagentStop,
+}
+
 /// Handle a hook event from an AI agent.
 /// Called as: `wezterm-agent-dashboard hook <agent> <event>`
 pub fn cmd_hook(args: &[String]) -> i32 {
@@ -45,20 +58,45 @@ pub fn cmd_hook(args: &[String]) -> i32 {
 
     let input = read_stdin_json();
 
-    match event {
-        "user-prompt-submit" => handle_user_prompt_submit(agent, &input),
-        "notification" => handle_notification(agent, &input),
-        "stop" => handle_stop(agent, &input),
-        "stop-failure" => handle_stop_failure(agent, &input),
-        "session-start" => handle_session_start(agent),
-        "session-end" => handle_session_end(&pane_id),
-        "activity-log" => handle_activity_log(&pane_id, &input),
-        "subagent-start" => handle_subagent_start(&input),
-        "subagent-stop" => handle_subagent_stop(&input),
-        _ => {}
+    match normalize_hook_event(agent, event) {
+        Some(HookEvent::UserPromptSubmit) => handle_user_prompt_submit(agent, &input),
+        Some(HookEvent::Notification) => handle_notification(agent, &input),
+        Some(HookEvent::Stop) => handle_stop(agent, &input),
+        Some(HookEvent::StopFailure) => handle_stop_failure(agent, &input),
+        Some(HookEvent::SessionStart) => handle_session_start(agent),
+        Some(HookEvent::SessionEnd) => handle_session_end(&pane_id),
+        Some(HookEvent::ActivityLog) => handle_activity_log(&pane_id, &input),
+        Some(HookEvent::SubagentStart) => handle_subagent_start(&input),
+        Some(HookEvent::SubagentStop) => handle_subagent_stop(&input),
+        None => {}
     }
 
     0
+}
+
+fn normalize_hook_event(agent: &str, event: &str) -> Option<HookEvent> {
+    match event {
+        "user-prompt-submit" | "UserPromptSubmit" => Some(HookEvent::UserPromptSubmit),
+        "notification" | "Notification" => Some(HookEvent::Notification),
+        "stop" | "Stop" => Some(HookEvent::Stop),
+        "stop-failure" | "StopFailure" => Some(HookEvent::StopFailure),
+        "session-start" | "SessionStart" => Some(HookEvent::SessionStart),
+        "session-end" | "SessionEnd" => Some(HookEvent::SessionEnd),
+        "activity-log" | "PreToolUse" | "PostToolUse" | "PostToolUseFailure" => {
+            Some(HookEvent::ActivityLog)
+        }
+        "subagent-start" => Some(HookEvent::SubagentStart),
+        "subagent-stop" => Some(HookEvent::SubagentStop),
+        _ if agent == "codex" => normalize_codex_event(event),
+        _ => None,
+    }
+}
+
+fn normalize_codex_event(event: &str) -> Option<HookEvent> {
+    match event {
+        "pre-tool-use" | "post-tool-use" | "post-tool-use-failure" => Some(HookEvent::ActivityLog),
+        _ => None,
+    }
 }
 
 fn handle_user_prompt_submit(agent: &str, input: &Value) {
@@ -220,7 +258,7 @@ fn handle_subagent_stop(input: &Value) {
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn update_cwd_and_mode(agent: &str, input: &Value) {
+fn update_cwd_and_mode(_agent: &str, input: &Value) {
     let cwd = json_str(input, "cwd");
     if !cwd.is_empty() {
         // Don't update cwd when subagents are active
@@ -230,11 +268,9 @@ fn update_cwd_and_mode(agent: &str, input: &Value) {
         }
     }
 
-    if agent == "claude" {
-        let mode = json_str(input, "permission_mode");
-        if !mode.is_empty() {
-            user_vars::set_user_var("agent_permission_mode", mode);
-        }
+    let mode = json_str(input, "permission_mode");
+    if !mode.is_empty() {
+        user_vars::set_user_var("agent_permission_mode", mode);
     }
 }
 
@@ -330,6 +366,19 @@ mod tests {
     }
 
     #[test]
+    fn test_activity_log_records_tool_use() {
+        let pane_id = format!("test-tool-use-{}", std::process::id());
+        let path = activity_log_path(&pane_id);
+        let _ = fs::remove_file(&path);
+
+        write_activity_entry(&pane_id, "Bash", "cargo test");
+
+        let content = fs::read_to_string(&path).unwrap();
+        assert!(content.contains("|Bash|cargo test\n"));
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
     fn test_trim_log_file_under_threshold() {
         let dir = std::env::temp_dir();
         let path = dir.join("test-trim-under.log");
@@ -373,5 +422,47 @@ mod tests {
         let path = PathBuf::from("/tmp/nonexistent-trim-test-12345.log");
         // Should not panic
         trim_log_file(&path, 5, 10);
+    }
+
+    #[test]
+    fn test_codex_lifecycle_event_mapping() {
+        assert_eq!(
+            normalize_hook_event("codex", "SessionStart"),
+            Some(HookEvent::SessionStart)
+        );
+        assert_eq!(
+            normalize_hook_event("codex", "UserPromptSubmit"),
+            Some(HookEvent::UserPromptSubmit)
+        );
+        assert_eq!(normalize_hook_event("codex", "Stop"), Some(HookEvent::Stop));
+    }
+
+    #[test]
+    fn test_codex_tool_event_mapping() {
+        assert_eq!(
+            normalize_hook_event("codex", "PreToolUse"),
+            Some(HookEvent::ActivityLog)
+        );
+        assert_eq!(
+            normalize_hook_event("codex", "PostToolUse"),
+            Some(HookEvent::ActivityLog)
+        );
+        assert_eq!(
+            normalize_hook_event("codex", "PostToolUseFailure"),
+            Some(HookEvent::ActivityLog)
+        );
+    }
+
+    #[test]
+    fn test_dashboard_event_aliases_still_work() {
+        assert_eq!(
+            normalize_hook_event("claude", "user-prompt-submit"),
+            Some(HookEvent::UserPromptSubmit)
+        );
+        assert_eq!(
+            normalize_hook_event("codex", "activity-log"),
+            Some(HookEvent::ActivityLog)
+        );
+        assert_eq!(normalize_hook_event("codex", "unknown"), None);
     }
 }

@@ -127,22 +127,54 @@ agent_dashboard.apply_to_config(config)
 }
 ```
 
+### Codex
+
+利用している Codex で hook 機能の有効化が必要な場合は、`~/.codex/config.toml` に以下を設定してください:
+
+```toml
+[features]
+codex_hooks = true
+```
+
+`~/.codex/hooks.json` に以下を追加してください:
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "wezterm-agent-dashboard hook codex SessionStart" }] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "wezterm-agent-dashboard hook codex UserPromptSubmit" }] }
+    ],
+    "PostToolUse": [
+      { "hooks": [{ "type": "command", "command": "wezterm-agent-dashboard hook codex PostToolUse" }] }
+    ],
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "wezterm-agent-dashboard hook codex Stop" }] }
+    ]
+  }
+}
+```
+
+特定のツールだけを記録したい場合は、Codex の `PostToolUse` に `matcher` を追加できます。
+
 ### サポートされているイベント
 
 `hook` サブコマンドの3番目の引数として以下のイベント名を渡せます:
 
-| イベント | 効果 |
+| イベント / hook alias | 効果 |
 |---|---|
-| `user-prompt-submit` | エージェントを `running` に設定し、ユーザープロンプトを記録 |
-| `notification` | エージェントを `waiting` に設定（権限要求など） |
-| `stop` | エージェントを `idle` に設定し、最後の応答を記録 |
-| `stop-failure` | エージェントを `error` に設定 |
-| `session-start` | エージェント状態をリセット |
-| `session-end` | 状態とアクティビティログをクリア |
-| `activity-log` | ツール使用のエントリをアクティビティログに追加 |
+| `user-prompt-submit` / `UserPromptSubmit` | エージェントを `running` に設定し、ユーザープロンプトを記録 |
+| `notification` / `Notification` | エージェントを `waiting` に設定（権限要求など） |
+| `stop` / `Stop` | エージェントを `idle` に設定し、最後の応答を記録 |
+| `stop-failure` / `StopFailure` | エージェントを `error` に設定 |
+| `session-start` / `SessionStart` | エージェント状態をリセット |
+| `session-end` / `SessionEnd` | 状態とアクティビティログをクリア |
+| `activity-log` / `PreToolUse` / `PostToolUse` / `PostToolUseFailure` | ツール使用のエントリをアクティビティログに追加 |
 | `subagent-start` / `subagent-stop` | 起動中のサブエージェントを追跡 |
 
-Codex のフックでは `claude` の代わりに `codex` を渡してください。
+Codex で利用できる hook は Codex CLI のバージョンに依存します。上記の推奨設定では `SessionStart`、`UserPromptSubmit`、`PostToolUse`、`Stop` を使います。利用中の Codex が `Notification`、`SessionEnd`、`PostToolUseFailure` を提供していない場合、dashboard はそれらの遷移を Codex から受け取れません。その場合も次回の `SessionStart` で状態をリセットし、`Stop` で pane を idle に戻します。`PreToolUse` も alias として受け付けますが、`PostToolUse` と同時に設定すると activity が重複するため、標準例には含めていません。
 
 ### レガシー: `hook.sh` ラッパー
 

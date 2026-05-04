@@ -81,18 +81,20 @@ jobs:
           - target: aarch64-apple-darwin
             os: macos-14
             cross: false
+          - target: x86_64-apple-darwin
+            os: macos-13
+            cross: false
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             cross: false
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
-            cross: true
     runs-on: ${{ matrix.os }}
     env:
       TARGET: ${{ matrix.target }}
       USE_CROSS: ${{ matrix.cross }}
     steps:
       - uses: actions/checkout@v5
+      - name: Verify release targets
+        run: bash scripts/check-release-targets.sh
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -109,11 +111,11 @@ jobs:
       - name: Package
         run: |
           cd "target/$TARGET/release"
-          tar czf "../../../wezterm-agent-dashboard-${TARGET}.tar.gz" wezterm-agent-dashboard
+          tar czf "../../../wezterm-agent-dashboard-${GITHUB_REF_NAME}-${TARGET}.tar.gz" wezterm-agent-dashboard
       - uses: actions/upload-artifact@v4
         with:
           name: wezterm-agent-dashboard-${{ matrix.target }}
-          path: wezterm-agent-dashboard-${{ matrix.target }}.tar.gz
+          path: wezterm-agent-dashboard-${{ github.ref_name }}-${{ matrix.target }}.tar.gz
 
   release:
     needs: build

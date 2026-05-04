@@ -69,6 +69,8 @@ Once installed, the dashboard status bar appears automatically when an AI agent 
 |---|---|
 | `LEADER+e` | Toggle dashboard sidebar |
 
+When `show_status_bar` is enabled, the plugin owns WezTerm's right status area via `window:set_right_status(...)`. It clears that area when no agent panes are present; disable `show_status_bar` if your config manages `right_status` elsewhere.
+
 ## Configuration
 
 You can customize the plugin by passing options to `setup`:

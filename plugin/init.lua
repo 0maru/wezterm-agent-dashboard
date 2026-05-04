@@ -357,9 +357,7 @@ function M.apply_to_config(config)
     if M.config.show_status_bar then
         wezterm.on("update-status", function(window, pane)
             local status = build_status_bar()
-            if status ~= "" then
-                window:set_right_status(status)
-            end
+            window:set_right_status(status)
         end)
     end
 

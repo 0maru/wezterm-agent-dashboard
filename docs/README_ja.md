@@ -69,6 +69,8 @@ return config
 |---|---|
 | `LEADER+e` | ダッシュボードサイドバーの表示切り替え |
 
+`show_status_bar` が有効な場合、このプラグインは `window:set_right_status(...)` で WezTerm の right status 領域を管理します。agent pane が存在しないときはその領域をクリアします。ほかの設定で `right_status` を管理している場合は `show_status_bar` を無効にしてください。
+
 ## 設定
 
 `setup` にオプションを渡すことでカスタマイズできます：

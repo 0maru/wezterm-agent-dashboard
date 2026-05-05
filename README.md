@@ -16,6 +16,7 @@ wezterm-agent-dashboard displays a status bar and dashboard overlay inside [WezT
 - Token usage and cost tracking
 - Active task and tool call visualization
 - Lightweight status bar integration with WezTerm
+- Optional inactive tab icon/color styling for agent status
 - Dashboard overlay toggled via keybinding
 - Support for multiple concurrent agent sessions
 
@@ -54,6 +55,7 @@ local config = wezterm.config_builder()
 -- Load the agent dashboard plugin
 local agent_dashboard = wezterm.plugin.require("https://github.com/0maru/wezterm-agent-dashboard")
 
+agent_dashboard.setup()
 agent_dashboard.apply_to_config(config)
 
 return config
@@ -65,18 +67,32 @@ Once installed, the dashboard status bar appears automatically when an AI agent 
 
 | Keybinding | Action |
 |---|---|
-| `Ctrl+Shift+A` | Toggle dashboard overlay |
+| `LEADER+e` | Toggle dashboard sidebar |
 
 ## Configuration
 
-You can customize the plugin by passing options to `apply_to_config`:
+You can customize the plugin by passing options to `setup`:
 
 ```lua
-agent_dashboard.apply_to_config(config, {
-  position = "bottom",    -- "top" or "bottom"
-  update_interval = 1000, -- refresh interval in ms
+agent_dashboard.setup({
+  toggle_key = { key = "e", mods = "LEADER" },
+  sidebar_percent = 20,
+  sidebar_position = "Right",
+  tab_status = {
+    enabled = true,
+    reset_on_active = true,
+    states = {
+      notification = { icon = "🔔", bg_color = "#3b2f00", fg_color = "#ffd75f" },
+      error = { icon = "✕", bg_color = "#3a1f1f", fg_color = "#ff5f5f" },
+      waiting = { icon = "◐", bg_color = "#332b12", fg_color = "#ffd75f" },
+      running = { icon = "●", bg_color = "#16351f", fg_color = "#87d787" },
+    },
+  },
 })
+agent_dashboard.apply_to_config(config)
 ```
+
+When `tab_status.enabled` is true, inactive tabs containing agent panes can show an icon and tab color based on `agent_attention` / `agent_status`. Notification styling is marked as seen when the tab becomes active.
 
 ## Agent Hooks
 

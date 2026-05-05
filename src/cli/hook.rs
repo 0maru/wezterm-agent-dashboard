@@ -350,15 +350,7 @@ fn write_activity_entry(pane_id: &str, tool_name: &str, label: &str) {
     let path = activity_log_path(pane_id);
     let hhmm = local_time_hhmm();
 
-    // Truncate label for display
-    let label = if label.len() > 200 {
-        &label[..200]
-    } else {
-        label
-    };
-
-    // Replace newlines and pipes in label
-    let label = label.replace(['\n', '|'], " ");
+    let label = format_activity_label(label, 200);
 
     let entry = format!("{hhmm}|{tool_name}|{label}\n");
 
@@ -368,6 +360,11 @@ fn write_activity_entry(pane_id: &str, tool_name: &str, label: &str) {
 
     // Trim log if too large
     trim_log_file(&path, 200, 210);
+}
+
+fn format_activity_label(label: &str, max_chars: usize) -> String {
+    let sanitized = label.replace(['\n', '|'], " ");
+    sanitized.chars().take(max_chars).collect()
 }
 
 fn trim_log_file(path: &PathBuf, keep: usize, threshold: usize) {
@@ -569,6 +566,19 @@ mod tests {
         remove_subagent_entry(&mut entries, &input);
 
         assert_eq!(subagent_labels(&entries), "Explore");
+    }
+
+    #[test]
+    fn test_format_activity_label_truncates_on_utf8_boundary() {
+        let label = "あ".repeat(100);
+        let truncated = format_activity_label(&label, 67);
+        assert_eq!(truncated, "あ".repeat(67));
+    }
+
+    #[test]
+    fn test_format_activity_label_sanitizes_separators() {
+        let label = "line1\nline2|line3";
+        assert_eq!(format_activity_label(label, 200), "line1 line2 line3");
     }
 
     #[test]

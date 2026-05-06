@@ -173,6 +173,8 @@ agent_dashboard.apply_to_config(config)
 | `activity-log` | ツール使用のエントリをアクティビティログに追加 |
 | `subagent-start` / `subagent-stop` | 起動中のサブエージェントを追跡 |
 
+フックの payload に `usage` または `transcript_path` が含まれる場合、ダッシュボードは input / output / cache token を合算してエージェント行に表示します。payload に USD コストが含まれる場合、またはモデルが同梱の Claude モデル料金マップに一致する場合はコストも表示し、未知のモデルでは token のみ表示します。
+
 Codex のフックでは `claude` の代わりに `codex` を渡してください。
 
 ### レガシー: `hook.sh` ラッパー

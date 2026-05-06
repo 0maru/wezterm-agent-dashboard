@@ -173,6 +173,8 @@ The third argument passed to `hook` maps to the following agent state transition
 | `activity-log` | Append a tool-use entry to the activity log |
 | `subagent-start` / `subagent-stop` | Track active subagents |
 
+When hook payloads include `usage` or `transcript_path`, the dashboard aggregates input/output/cache tokens and shows them in the agent row. Cost is shown when the payload contains an explicit USD cost or when the model matches the bundled Claude model pricing map; unknown models continue to show tokens without a cost estimate.
+
 Replace `claude` with `codex` for Codex hooks.
 
 ### Legacy: `hook.sh` wrapper

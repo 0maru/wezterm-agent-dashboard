@@ -24,8 +24,8 @@ impl Widget for FilterBar<'_> {
         }
 
         let (all, running, waiting, idle, error) = self.state.status_counts();
-        let filter = &self.state.agent_filter;
-        let focused = self.state.focus == Focus::Filter;
+        let filter = &self.state.ui.filters.agent_filter;
+        let focused = self.state.ui.focus == Focus::Filter;
 
         let items: Vec<(AgentFilter, &str, usize, Color)> = vec![
             (AgentFilter::All, "All", all, Color::White),
@@ -33,25 +33,25 @@ impl Widget for FilterBar<'_> {
                 AgentFilter::Running,
                 PaneStatus::Running.icon(),
                 running,
-                self.state.theme.running,
+                self.state.ui.theme.running,
             ),
             (
                 AgentFilter::Waiting,
                 PaneStatus::Waiting.icon(),
                 waiting,
-                self.state.theme.waiting,
+                self.state.ui.theme.waiting,
             ),
             (
                 AgentFilter::Idle,
                 PaneStatus::Idle.icon(),
                 idle,
-                self.state.theme.idle,
+                self.state.ui.theme.idle,
             ),
             (
                 AgentFilter::Error,
                 PaneStatus::Error.icon(),
                 error,
-                self.state.theme.error,
+                self.state.ui.theme.error,
             ),
         ];
 
@@ -69,17 +69,18 @@ impl Widget for FilterBar<'_> {
             } else if is_active {
                 Style::default().fg(*color).add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(self.state.theme.filter_inactive)
+                Style::default().fg(self.state.ui.theme.filter_inactive)
             };
 
             spans.push(Span::styled(format!("{label}{count}"), style));
         }
 
         // Repo filter button
-        if let RepoFilter::Repo(ref id) = self.state.repo_filter {
+        if let RepoFilter::Repo(ref id) = self.state.ui.filters.repo_filter {
             let display = self
                 .state
-                .repo_groups
+                .repos
+                .groups
                 .iter()
                 .find(|g| g.id == *id)
                 .map(|g| g.name.as_str())
@@ -87,7 +88,7 @@ impl Widget for FilterBar<'_> {
             spans.push(Span::raw("  "));
             spans.push(Span::styled(
                 format!("▼{display}"),
-                Style::default().fg(self.state.theme.active_border),
+                Style::default().fg(self.state.ui.theme.active_border),
             ));
         }
 
@@ -114,19 +115,19 @@ impl Widget for AgentList<'_> {
         let mut y = area.y;
         let max_y = area.y + area.height;
 
-        for (group_idx, group) in self.state.repo_groups.iter().enumerate() {
-            if let RepoFilter::Repo(ref id) = self.state.repo_filter
+        for (group_idx, group) in self.state.repos.groups.iter().enumerate() {
+            if let RepoFilter::Repo(ref id) = self.state.ui.filters.repo_filter
                 && group.id != *id
             {
                 continue;
             }
 
             // Group header
-            if y < max_y && self.state.repo_groups.len() > 1 {
+            if y < max_y && self.state.repos.groups.len() > 1 {
                 let border_color = if group.has_focus {
-                    self.state.theme.active_border
+                    self.state.ui.theme.active_border
                 } else {
-                    self.state.theme.inactive_border
+                    self.state.ui.theme.inactive_border
                 };
 
                 let header = format!("─ {} ", group.name);
@@ -141,7 +142,7 @@ impl Widget for AgentList<'_> {
 
             // Panes in this group
             for (pane, git_info) in &group.panes {
-                if !self.state.agent_filter.matches(pane.status) {
+                if !self.state.ui.filters.agent_filter.matches(pane.status) {
                     continue;
                 }
 
@@ -151,17 +152,19 @@ impl Widget for AgentList<'_> {
 
                 let is_selected = self
                     .state
-                    .agent_row_targets
-                    .get(self.state.selected_agent_row)
+                    .agents
+                    .row_targets
+                    .get(self.state.agents.selected_row)
                     .is_some_and(|t| t.pane_id == pane.pane_id);
 
                 // Line 1: status icon + agent type + permission badge + elapsed time
                 let mut spans = Vec::new();
 
                 // Status icon
-                let status_color = self.state.theme.status_color(pane.status);
+                let status_color = self.state.ui.theme.status_color(pane.status);
                 let icon = if pane.status == PaneStatus::Running {
-                    let color_idx = SPINNER_PULSE[self.state.spinner_frame % SPINNER_PULSE.len()];
+                    let color_idx =
+                        SPINNER_PULSE[self.state.ui.spinner_frame % SPINNER_PULSE.len()];
                     spans.push(Span::styled(
                         SPINNER_ICON,
                         Style::default().fg(Color::Indexed(color_idx)),
@@ -179,7 +182,7 @@ impl Widget for AgentList<'_> {
                 spans.push(Span::raw(" "));
 
                 // Agent type
-                let agent_color = self.state.theme.agent_color(pane.agent);
+                let agent_color = self.state.ui.theme.agent_color(pane.agent);
                 spans.push(Span::styled(
                     pane.agent.as_str(),
                     Style::default()
@@ -189,19 +192,19 @@ impl Widget for AgentList<'_> {
 
                 // Permission badge
                 if let Some(badge) = pane.permission_mode.badge() {
-                    let badge_color = self.state.theme.badge_color(pane.permission_mode);
+                    let badge_color = self.state.ui.theme.badge_color(pane.permission_mode);
                     spans.push(Span::raw("  "));
                     spans.push(Span::styled(badge, Style::default().fg(badge_color)));
                 }
 
                 // Task progress
-                if let Some(progress) = self.state.pane_task_progress.get(&pane.pane_id)
+                if let Some(progress) = self.state.activity.pane_task_progress.get(&pane.pane_id)
                     && !progress.is_empty()
                 {
                     spans.push(Span::raw("  "));
                     spans.push(Span::styled(
                         progress.display(),
-                        Style::default().fg(self.state.theme.dimmed),
+                        Style::default().fg(self.state.ui.theme.dimmed),
                     ));
                 }
 
@@ -212,13 +215,13 @@ impl Widget for AgentList<'_> {
                         spans.push(Span::raw("  "));
                         spans.push(Span::styled(
                             elapsed,
-                            Style::default().fg(self.state.theme.elapsed_time),
+                            Style::default().fg(self.state.ui.theme.elapsed_time),
                         ));
                     }
                 }
 
                 // Selection indicator
-                if is_selected && self.state.focus == Focus::Agents {
+                if is_selected && self.state.ui.focus == Focus::Agents {
                     // Highlight the entire line
                     let line = Line::from(spans);
                     buf.set_line(area.x, y, &line, area.width);
@@ -244,7 +247,7 @@ impl Widget for AgentList<'_> {
                         area.x,
                         y,
                         &truncated,
-                        Style::default().fg(self.state.theme.prompt_text),
+                        Style::default().fg(self.state.ui.theme.prompt_text),
                     );
                     y += 1;
                 }
@@ -258,7 +261,7 @@ impl Widget for AgentList<'_> {
                         area.x,
                         y,
                         &truncated,
-                        Style::default().fg(self.state.theme.wait_reason),
+                        Style::default().fg(self.state.ui.theme.wait_reason),
                     );
                     y += 1;
                 }
@@ -281,7 +284,7 @@ impl Widget for AgentList<'_> {
                             area.x,
                             y,
                             &truncated,
-                            Style::default().fg(self.state.theme.subagent),
+                            Style::default().fg(self.state.ui.theme.subagent),
                         );
                         y += 1;
                     }
@@ -302,14 +305,14 @@ impl Widget for AgentList<'_> {
                         area.x,
                         y,
                         &truncated,
-                        Style::default().fg(self.state.theme.branch),
+                        Style::default().fg(self.state.ui.theme.branch),
                     );
                     y += 1;
                 }
             }
 
             // Spacing between groups
-            if group_idx + 1 < self.state.repo_groups.len() && y < max_y {
+            if group_idx + 1 < self.state.repos.groups.len() && y < max_y {
                 y += 1;
             }
         }
@@ -341,7 +344,7 @@ impl Widget for RepoPopup<'_> {
         }
 
         // Border
-        let border_style = Style::default().fg(self.state.theme.active_border);
+        let border_style = Style::default().fg(self.state.ui.theme.active_border);
         for x in area.x..area.x + area.width {
             if let Some(cell) = buf.cell_mut((x, area.y)) {
                 cell.set_char('─');
@@ -358,7 +361,7 @@ impl Widget for RepoPopup<'_> {
 
         // "All" option
         if y < area.y + area.height - 1 {
-            let is_selected = self.state.repo_popup_selected == 0;
+            let is_selected = self.state.ui.filters.repo_popup_selected == 0;
             let style = if is_selected {
                 Style::default().add_modifier(Modifier::REVERSED)
             } else {
@@ -373,7 +376,7 @@ impl Widget for RepoPopup<'_> {
             if y >= area.y + area.height - 1 {
                 break;
             }
-            let is_selected = self.state.repo_popup_selected == i + 1;
+            let is_selected = self.state.ui.filters.repo_popup_selected == i + 1;
             let style = if is_selected {
                 Style::default().add_modifier(Modifier::REVERSED)
             } else {

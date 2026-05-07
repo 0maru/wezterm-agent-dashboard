@@ -35,17 +35,17 @@ impl Widget for BottomTabLabel<'_> {
             if i > 0 {
                 spans.push(Span::styled(
                     " │ ",
-                    Style::default().fg(self.state.theme.inactive_border),
+                    Style::default().fg(self.state.ui.theme.inactive_border),
                 ));
             }
 
-            let is_active = self.state.bottom_tab == *tab;
+            let is_active = self.state.ui.bottom_tab == *tab;
             let style = if is_active {
                 Style::default()
-                    .fg(self.state.theme.filter_active)
+                    .fg(self.state.ui.theme.filter_active)
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(self.state.theme.filter_inactive)
+                Style::default().fg(self.state.ui.theme.filter_inactive)
             };
 
             spans.push(Span::styled(*label, style));
@@ -72,17 +72,17 @@ impl Widget for ActivityPanel<'_> {
 
         let width = area.width as usize;
 
-        if self.state.activity_entries.is_empty() {
+        if self.state.activity.entries.is_empty() {
             buf.set_string(
                 area.x + 1,
                 area.y,
                 "No activity yet",
-                Style::default().fg(self.state.theme.dimmed),
+                Style::default().fg(self.state.ui.theme.dimmed),
             );
             return;
         }
 
-        for (i, entry) in self.state.activity_entries.iter().enumerate() {
+        for (i, entry) in self.state.activity.entries.iter().enumerate() {
             if i >= area.height as usize {
                 break;
             }
@@ -90,7 +90,7 @@ impl Widget for ActivityPanel<'_> {
             let y = area.y + i as u16;
 
             // Timestamp
-            let ts_style = Style::default().fg(self.state.theme.dimmed);
+            let ts_style = Style::default().fg(self.state.ui.theme.dimmed);
             buf.set_string(area.x + 1, y, &entry.timestamp, ts_style);
 
             // Tool name with color
@@ -108,7 +108,7 @@ impl Widget for ActivityPanel<'_> {
                     label_x,
                     y,
                     &label,
-                    Style::default().fg(self.state.theme.prompt_text),
+                    Style::default().fg(self.state.ui.theme.prompt_text),
                 );
             }
         }
@@ -129,7 +129,7 @@ impl Widget for GitPanel<'_> {
             return;
         }
 
-        let git = &self.state.git;
+        let git = &self.state.repos.git;
         let width = area.width as usize;
         let mut y = area.y;
         let max_y = area.y + area.height;
@@ -139,7 +139,7 @@ impl Widget for GitPanel<'_> {
                 area.x + 1,
                 y,
                 "No git info",
-                Style::default().fg(self.state.theme.dimmed),
+                Style::default().fg(self.state.ui.theme.dimmed),
             );
             return;
         }
@@ -151,7 +151,7 @@ impl Widget for GitPanel<'_> {
                 Span::styled(
                     &git.branch,
                     Style::default()
-                        .fg(self.state.theme.branch)
+                        .fg(self.state.ui.theme.branch)
                         .add_modifier(Modifier::BOLD),
                 ),
             ];
@@ -161,7 +161,7 @@ impl Widget for GitPanel<'_> {
                 if git.ahead > 0 {
                     spans.push(Span::styled(
                         format!("↑{}", git.ahead),
-                        Style::default().fg(self.state.theme.running),
+                        Style::default().fg(self.state.ui.theme.running),
                     ));
                 }
                 if git.behind > 0 {
@@ -170,7 +170,7 @@ impl Widget for GitPanel<'_> {
                     }
                     spans.push(Span::styled(
                         format!("↓{}", git.behind),
-                        Style::default().fg(self.state.theme.error),
+                        Style::default().fg(self.state.ui.theme.error),
                     ));
                 }
             }
@@ -179,7 +179,7 @@ impl Widget for GitPanel<'_> {
                 spans.push(Span::raw("  "));
                 spans.push(Span::styled(
                     format!("PR #{pr}"),
-                    Style::default().fg(self.state.theme.active_border),
+                    Style::default().fg(self.state.ui.theme.active_border),
                 ));
             }
 
@@ -199,7 +199,7 @@ impl Widget for GitPanel<'_> {
                     git.staged_insertions,
                     git.staged_deletions
                 ),
-                Style::default().fg(self.state.theme.running),
+                Style::default().fg(self.state.ui.theme.running),
             );
             y += 1;
 
@@ -213,7 +213,7 @@ impl Widget for GitPanel<'_> {
                     area.x + 1,
                     y,
                     &truncated,
-                    Style::default().fg(self.state.theme.prompt_text),
+                    Style::default().fg(self.state.ui.theme.prompt_text),
                 );
                 y += 1;
             }
@@ -230,7 +230,7 @@ impl Widget for GitPanel<'_> {
                     git.unstaged_insertions,
                     git.unstaged_deletions
                 ),
-                Style::default().fg(self.state.theme.waiting),
+                Style::default().fg(self.state.ui.theme.waiting),
             );
             y += 1;
 
@@ -244,7 +244,7 @@ impl Widget for GitPanel<'_> {
                     area.x + 1,
                     y,
                     &truncated,
-                    Style::default().fg(self.state.theme.prompt_text),
+                    Style::default().fg(self.state.ui.theme.prompt_text),
                 );
                 y += 1;
             }
@@ -256,7 +256,7 @@ impl Widget for GitPanel<'_> {
                 area.x + 1,
                 y,
                 format!("Untracked ({})", git.untracked_files.len()),
-                Style::default().fg(self.state.theme.dimmed),
+                Style::default().fg(self.state.ui.theme.dimmed),
             );
             y += 1;
 
@@ -269,7 +269,7 @@ impl Widget for GitPanel<'_> {
                     area.x + 1,
                     y,
                     &truncated,
-                    Style::default().fg(self.state.theme.dimmed),
+                    Style::default().fg(self.state.ui.theme.dimmed),
                 );
                 y += 1;
             }
@@ -282,7 +282,7 @@ impl Widget for GitPanel<'_> {
                 area.x + 1,
                 y,
                 &truncated,
-                Style::default().fg(self.state.theme.dimmed),
+                Style::default().fg(self.state.ui.theme.dimmed),
             );
         }
     }

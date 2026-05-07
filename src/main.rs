@@ -118,7 +118,7 @@ fn run_app(
 
                         // Navigation: focus zones
                         (KeyCode::Tab, KeyModifiers::NONE) => {
-                            state.focus = match state.focus {
+                            state.ui.focus = match state.ui.focus {
                                 Focus::Filter => Focus::Agents,
                                 Focus::Agents => Focus::ActivityLog,
                                 Focus::ActivityLog => Focus::Filter,
@@ -127,44 +127,52 @@ fn run_app(
 
                         // Bottom tab toggle
                         (KeyCode::BackTab, _) => {
-                            state.bottom_tab = state.bottom_tab.toggle();
-                            git_active
-                                .store(state.bottom_tab == BottomTab::GitStatus, Ordering::Relaxed);
+                            state.ui.bottom_tab = state.ui.bottom_tab.toggle();
+                            git_active.store(
+                                state.ui.bottom_tab == BottomTab::GitStatus,
+                                Ordering::Relaxed,
+                            );
                         }
 
                         // Filter navigation (when filter is focused)
-                        (KeyCode::Char('h') | KeyCode::Left, _) if state.focus == Focus::Filter => {
-                            state.agent_filter = state.agent_filter.prev();
+                        (KeyCode::Char('h') | KeyCode::Left, _)
+                            if state.ui.focus == Focus::Filter =>
+                        {
+                            state.ui.filters.agent_filter = state.ui.filters.agent_filter.prev();
                             send_git_path(state.refresh_local_views(), &git_path_tx);
                         }
                         (KeyCode::Char('l') | KeyCode::Right, _)
-                            if state.focus == Focus::Filter =>
+                            if state.ui.focus == Focus::Filter =>
                         {
-                            state.agent_filter = state.agent_filter.next();
+                            state.ui.filters.agent_filter = state.ui.filters.agent_filter.next();
                             send_git_path(state.refresh_local_views(), &git_path_tx);
                         }
 
                         // Agent list navigation
-                        (KeyCode::Char('j') | KeyCode::Down, _) if state.focus == Focus::Agents => {
+                        (KeyCode::Char('j') | KeyCode::Down, _)
+                            if state.ui.focus == Focus::Agents =>
+                        {
                             state.select_next();
                         }
-                        (KeyCode::Char('k') | KeyCode::Up, _) if state.focus == Focus::Agents => {
+                        (KeyCode::Char('k') | KeyCode::Up, _)
+                            if state.ui.focus == Focus::Agents =>
+                        {
                             state.select_prev();
                         }
 
                         // Jump to pane
-                        (KeyCode::Enter, _) if state.focus == Focus::Agents => {
-                            if state.repo_popup_open {
+                        (KeyCode::Enter, _) if state.ui.focus == Focus::Agents => {
+                            if state.ui.filters.repo_popup_open {
                                 // Select repo filter
                                 let entries = state.repo_entries();
-                                if state.repo_popup_selected == 0 {
-                                    state.repo_filter = RepoFilter::All;
+                                if state.ui.filters.repo_popup_selected == 0 {
+                                    state.ui.filters.repo_filter = RepoFilter::All;
                                 } else if let Some((id, _name)) =
-                                    entries.get(state.repo_popup_selected - 1)
+                                    entries.get(state.ui.filters.repo_popup_selected - 1)
                                 {
-                                    state.repo_filter = RepoFilter::Repo(id.clone());
+                                    state.ui.filters.repo_filter = RepoFilter::Repo(id.clone());
                                 }
-                                state.repo_popup_open = false;
+                                state.ui.filters.repo_popup_open = false;
                                 send_git_path(state.refresh_local_views(), &git_path_tx);
                             } else {
                                 state.jump_to_selected();
@@ -172,30 +180,33 @@ fn run_app(
                         }
 
                         // Repo filter popup
-                        (KeyCode::Char('r'), _) if state.focus == Focus::Agents => {
-                            state.repo_popup_open = !state.repo_popup_open;
-                            state.repo_popup_selected = 0;
+                        (KeyCode::Char('r'), _) if state.ui.focus == Focus::Agents => {
+                            state.ui.filters.repo_popup_open = !state.ui.filters.repo_popup_open;
+                            state.ui.filters.repo_popup_selected = 0;
                         }
 
                         // Popup navigation
-                        (KeyCode::Char('j') | KeyCode::Down, _) if state.repo_popup_open => {
+                        (KeyCode::Char('j') | KeyCode::Down, _)
+                            if state.ui.filters.repo_popup_open =>
+                        {
                             let max = state.repo_entries().len();
-                            if state.repo_popup_selected < max {
-                                state.repo_popup_selected += 1;
+                            if state.ui.filters.repo_popup_selected < max {
+                                state.ui.filters.repo_popup_selected += 1;
                             }
                         }
                         (KeyCode::Char('k') | KeyCode::Up, _)
-                            if state.repo_popup_open && state.repo_popup_selected > 0 =>
+                            if state.ui.filters.repo_popup_open
+                                && state.ui.filters.repo_popup_selected > 0 =>
                         {
-                            state.repo_popup_selected -= 1;
+                            state.ui.filters.repo_popup_selected -= 1;
                         }
 
                         // Escape closes popup or clears filter
                         (KeyCode::Esc, _) => {
-                            if state.repo_popup_open {
-                                state.repo_popup_open = false;
-                            } else if state.repo_filter != RepoFilter::All {
-                                state.repo_filter = RepoFilter::All;
+                            if state.ui.filters.repo_popup_open {
+                                state.ui.filters.repo_popup_open = false;
+                            } else if state.ui.filters.repo_filter != RepoFilter::All {
+                                state.ui.filters.repo_filter = RepoFilter::All;
                                 send_git_path(state.refresh_local_views(), &git_path_tx);
                             }
                         }
@@ -206,9 +217,9 @@ fn run_app(
 
                 Event::Mouse(mouse) => {
                     if let MouseEventKind::Down(_) = mouse.kind
-                        && state.repo_popup_open
+                        && state.ui.filters.repo_popup_open
                     {
-                        state.repo_popup_open = false;
+                        state.ui.filters.repo_popup_open = false;
                     }
                 }
 
@@ -222,7 +233,7 @@ fn run_app(
 
         // Spinner update
         if last_spinner.elapsed() >= SPINNER_INTERVAL {
-            state.spinner_frame = state.spinner_frame.wrapping_add(1);
+            state.ui.spinner_frame = state.ui.spinner_frame.wrapping_add(1);
             last_spinner = Instant::now();
         }
 
@@ -251,7 +262,7 @@ fn run_app(
             latest_git = Some(data);
         }
         if let Some(data) = latest_git {
-            state.git = data;
+            state.repos.git = data;
         }
     }
 

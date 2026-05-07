@@ -8,16 +8,19 @@ A WezTerm plugin that provides a real-time dashboard for monitoring AI coding ag
 
 ## Overview
 
-wezterm-agent-dashboard displays a status bar and dashboard overlay inside [WezTerm](https://wezfurlong.org/wezterm/) that tracks the activity of AI coding agents. Monitor token usage, active tasks, session duration, and more — all without leaving your terminal.
+wezterm-agent-dashboard displays a lightweight status bar summary and a split-pane dashboard inside [WezTerm](https://wezfurlong.org/wezterm/). It tracks Claude Code and Codex sessions through hook events, then shows agent state, recent tool activity, task progress, repository grouping, and Git status without leaving your terminal.
 
 ## Features
 
-- Real-time monitoring of AI agent sessions
-- Token usage and cost tracking
-- Active task and tool call visualization
-- Lightweight status bar integration with WezTerm
+- Real-time monitoring of Claude Code and Codex panes
+- WezTerm status bar summary for running / waiting / idle / error agents
+- Split-pane dashboard toggled via keybinding
+- Prompt or last-response preview, wait reason, elapsed time, permission mode, and subagent display
+- Recent tool activity log with labels for file, shell, search, web, task, skill, and messaging tools
+- Task progress display based on `TaskCreate` / `TaskUpdate` activity
+- Repository grouping, repository filter popup, Git branch and worktree display
+- Git panel for branch, ahead/behind, changed files, diff stats, remote URL, and GitHub PR number
 - Optional inactive tab icon/color styling for agent status
-- Dashboard overlay toggled via keybinding
 - Support for multiple concurrent agent sessions
 
 ## Requirements
@@ -63,23 +66,38 @@ return config
 
 ## Usage
 
-Once installed, the dashboard status bar appears automatically when an AI agent session is detected.
+Once installed, the status bar appears automatically when an AI agent session is detected.
 
 | Keybinding | Action |
 |---|---|
-| `LEADER+e` | Toggle dashboard sidebar |
+| `LEADER+e` | Toggle the dashboard sidebar |
+
+The dashboard itself supports these keys:
+
+| Key | Action |
+|---|---|
+| `Tab` | Cycle focus between filter, agent list, and bottom panel |
+| `Shift+Tab` | Toggle the bottom panel between Activity and Git |
+| `h` / `l`, `Left` / `Right` | Change the status filter when the filter bar is focused |
+| `j` / `k`, `Down` / `Up` | Move agent selection or repo popup selection |
+| `Enter` | Jump to the selected agent pane, or apply the selected repo filter |
+| `r` | Open or close the repository filter popup |
+| `Esc` | Close the repo popup or clear the repo filter |
+| `q`, `Ctrl+C` | Quit the dashboard pane |
 
 When `show_status_bar` is enabled, the plugin owns WezTerm's right status area via `window:set_right_status(...)`. It clears that area when no agent panes are present; disable `show_status_bar` if your config manages `right_status` elsewhere.
 
 ## Configuration
 
-You can customize the plugin by passing options to `setup`:
+Customize the Lua plugin with `setup()` before calling `apply_to_config()`:
 
 ```lua
 agent_dashboard.setup({
   toggle_key = { key = "e", mods = "LEADER" },
   sidebar_percent = 20,
   sidebar_position = "Right",
+  show_status_bar = true,
+  binary_name = "wezterm-agent-dashboard",
   tab_status = {
     enabled = true,
     reset_on_active = true,
@@ -91,10 +109,23 @@ agent_dashboard.setup({
     },
   },
 })
+
 agent_dashboard.apply_to_config(config)
 ```
 
+`apply_to_config()` mutates the WezTerm config by registering the status handler and inserting the toggle keybinding.
+
 When `tab_status.enabled` is true, inactive tabs containing agent panes can show an icon and tab color based on `agent_attention` / `agent_status`. Notification styling is marked as seen when the tab becomes active.
+
+## CLI
+
+The binary runs in TUI mode when called without arguments. It also provides helper subcommands:
+
+| Command | Effect |
+|---|---|
+| `wezterm-agent-dashboard hook <agent> <event>` | Receive Claude Code / Codex hook events |
+| `wezterm-agent-dashboard toggle [percent]` | Toggle the dashboard sidebar, using `percent` as the split width when opening |
+| `wezterm-agent-dashboard version` / `--version` | Print the package version |
 
 ## Agent Hooks
 

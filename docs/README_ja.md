@@ -85,6 +85,8 @@ return config
 | `Esc` | repo popup を閉じる、または repo filter を解除 |
 | `q`, `Ctrl+C` | ダッシュボードペインを終了 |
 
+CLI からは `wezterm-agent-dashboard toggle [percent] [--position Right|Left|Top|Bottom]` で同じ操作ができます。既存の `toggle 20` 形式は sidebar percent 指定として引き続き利用できます。CLI とキーバインドの toggle はどちらも現在の tab のみを対象にします。
+
 ## 設定
 
 `apply_to_config()` を呼ぶ前に `setup()` で Lua プラグインをカスタマイズできます。

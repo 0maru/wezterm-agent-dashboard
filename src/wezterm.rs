@@ -89,6 +89,36 @@ pub enum PermissionMode {
     BypassPermissions,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SplitDirection {
+    Left,
+    Right,
+    Top,
+    Bottom,
+}
+
+impl SplitDirection {
+    #[allow(clippy::should_implement_trait)]
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_ascii_lowercase().as_str() {
+            "left" => Some(Self::Left),
+            "right" => Some(Self::Right),
+            "top" => Some(Self::Top),
+            "bottom" => Some(Self::Bottom),
+            _ => None,
+        }
+    }
+
+    pub fn cli_flag(&self) -> &'static str {
+        match self {
+            Self::Left => "--left",
+            Self::Right => "--right",
+            Self::Top => "--top",
+            Self::Bottom => "--bottom",
+        }
+    }
+}
+
 impl PermissionMode {
     #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
@@ -390,14 +420,14 @@ pub fn jump_to_pane(tab_id: u64, pane_id: u64) {
     activate_pane(pane_id);
 }
 
-/// Split a new pane to the right and run a command in it.
+/// Split a new pane and run a command in it.
 /// Returns the new pane ID if successful.
-pub fn split_pane_right(percent: u8, args: &[&str]) -> Option<u64> {
+pub fn split_pane(percent: u8, direction: SplitDirection, args: &[&str]) -> Option<u64> {
     let mut cmd = Command::new("wezterm");
     cmd.args([
         "cli",
         "split-pane",
-        "--right",
+        direction.cli_flag(),
         "--percent",
         &percent.to_string(),
     ]);
@@ -413,6 +443,12 @@ pub fn split_pane_right(percent: u8, args: &[&str]) -> Option<u64> {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     stdout.trim().parse::<u64>().ok()
+}
+
+/// Split a new pane to the right and run a command in it.
+/// Returns the new pane ID if successful.
+pub fn split_pane_right(percent: u8, args: &[&str]) -> Option<u64> {
+    split_pane(percent, SplitDirection::Right, args)
 }
 
 /// Kill a pane by ID.
@@ -537,6 +573,17 @@ mod tests {
         assert_eq!(PermissionMode::from_str("default"), PermissionMode::Default);
         assert_eq!(PermissionMode::from_str("unknown"), PermissionMode::Default);
         assert_eq!(PermissionMode::from_str(""), PermissionMode::Default);
+    }
+
+    #[test]
+    fn test_split_direction_from_str() {
+        assert_eq!(SplitDirection::from_str("Left"), Some(SplitDirection::Left));
+        assert_eq!(
+            SplitDirection::from_str("right"),
+            Some(SplitDirection::Right)
+        );
+        assert_eq!(SplitDirection::from_str("invalid"), None);
+        assert_eq!(SplitDirection::Top.cli_flag(), "--top");
     }
 
     #[test]

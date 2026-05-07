@@ -85,6 +85,8 @@ The dashboard itself supports these keys:
 | `Esc` | Close the repo popup or clear the repo filter |
 | `q`, `Ctrl+C` | Quit the dashboard pane |
 
+The CLI equivalent is `wezterm-agent-dashboard toggle [percent] [--position Right|Left|Top|Bottom]`. The legacy `toggle 20` form still sets the sidebar percent. CLI and keybinding toggles both operate on the current tab only.
+
 ## Configuration
 
 Customize the Lua plugin with `setup()` before calling `apply_to_config()`:

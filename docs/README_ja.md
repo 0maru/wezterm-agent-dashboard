@@ -85,6 +85,8 @@ return config
 | `Esc` | repo popup を閉じる、または repo filter を解除 |
 | `q`, `Ctrl+C` | ダッシュボードペインを終了 |
 
+`show_status_bar` が有効な場合、このプラグインは `window:set_right_status(...)` で WezTerm の right status 領域を管理します。agent pane が存在しないときはその領域をクリアします。ほかの設定で `right_status` を管理している場合は `show_status_bar` を無効にしてください。
+
 ## 設定
 
 `apply_to_config()` を呼ぶ前に `setup()` で Lua プラグインをカスタマイズできます。

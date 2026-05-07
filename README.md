@@ -85,6 +85,8 @@ The dashboard itself supports these keys:
 | `Esc` | Close the repo popup or clear the repo filter |
 | `q`, `Ctrl+C` | Quit the dashboard pane |
 
+When `show_status_bar` is enabled, the plugin owns WezTerm's right status area via `window:set_right_status(...)`. It clears that area when no agent panes are present; disable `show_status_bar` if your config manages `right_status` elsewhere.
+
 ## Configuration
 
 Customize the Lua plugin with `setup()` before calling `apply_to_config()`:

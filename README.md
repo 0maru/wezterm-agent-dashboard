@@ -17,7 +17,8 @@ wezterm-agent-dashboard displays a lightweight status bar summary and a split-pa
 - Split-pane dashboard toggled via keybinding
 - Prompt or last-response preview, wait reason, elapsed time, permission mode, and subagent display
 - Recent tool activity log with labels for file, shell, search, web, task, skill, and messaging tools
-- Task progress display based on `TaskCreate` / `TaskUpdate` activity
+- Task/Todo progress display based on `TaskCreate` / `TaskUpdate` activity
+- Token usage and cost tracking
 - Repository grouping, repository filter popup, Git branch and worktree display
 - Git panel for branch, ahead/behind, changed files, diff stats, remote URL, and GitHub PR number
 - Optional inactive tab icon/color styling for agent status
@@ -172,6 +173,8 @@ The third argument passed to `hook` maps to the following agent state transition
 | `session-end` | Clear state and activity log |
 | `activity-log` | Append a tool-use entry to the activity log |
 | `subagent-start` / `subagent-stop` | Track active subagents |
+
+Task progress is reconstructed from TaskCreate/TaskUpdate style events and TodoWrite snapshots when those tool calls are present. Tool failures are kept in the activity log label when the hook payload includes an error response.
 
 Replace `claude` with `codex` for Codex hooks.
 

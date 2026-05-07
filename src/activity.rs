@@ -22,7 +22,8 @@ impl ActivityEntry {
             "Read" | "Glob" | "Grep" => 110, // soft blue
             "Agent" => 181,                  // soft pink
             "WebFetch" | "WebSearch" => 117, // soft cyan
-            "TaskCreate" | "TaskUpdate" | "TaskGet" | "TaskStop" | "TaskOutput" => 223, // soft gold
+            "TaskCreate" | "TaskCreated" | "TaskUpdate" | "TaskCompleted" | "TaskGet"
+            | "TaskStop" | "TaskOutput" | "TodoWrite" => 223, // soft gold
             "Skill" => 182,                  // light purple
             "AskUserQuestion" => 216,        // soft orange
             "SendMessage" | "TeamCreate" => 151, // muted green
@@ -173,7 +174,7 @@ pub fn parse_task_progress(entries: &[ActivityEntry]) -> TaskProgress {
     // Process entries in chronological order (they come newest-first, so reverse)
     for entry in entries.iter().rev() {
         match entry.tool.as_str() {
-            "TaskCreate" => {
+            "TaskCreate" | "TaskCreated" => {
                 let id = extract_task_id_from_create(&entry.label);
                 if !id.is_empty() {
                     // Check if this ID already exists (new session reuse)
@@ -188,21 +189,34 @@ pub fn parse_task_progress(entries: &[ActivityEntry]) -> TaskProgress {
                     progress.tasks.push((id, TaskStatus::Pending));
                 }
             }
+            "TaskCompleted" => {
+                let (_, id) = extract_status_and_id(&entry.label);
+                if !id.is_empty()
+                    && let Some(task) = progress.tasks.iter_mut().find(|(tid, _)| tid == &id)
+                {
+                    task.1 = TaskStatus::Completed;
+                }
+            }
             "TaskUpdate" => {
                 let (status_str, id) = extract_status_and_id(&entry.label);
                 if !id.is_empty() {
-                    let new_status = match status_str {
-                        "completed" => TaskStatus::Completed,
-                        "in_progress" => TaskStatus::InProgress,
-                        "deleted" => {
+                    let new_status = match parse_task_status(status_str) {
+                        Some(status) => status,
+                        None if status_str == "deleted" => {
                             progress.tasks.retain(|(tid, _)| tid != &id);
                             continue;
                         }
-                        _ => continue,
+                        None => continue,
                     };
                     if let Some(task) = progress.tasks.iter_mut().find(|(tid, _)| tid == &id) {
                         task.1 = new_status;
                     }
+                }
+            }
+            "TodoWrite" => {
+                let todos = parse_todo_write_progress(&entry.label);
+                if !todos.is_empty() {
+                    progress.tasks = todos;
                 }
             }
             _ => {}
@@ -227,14 +241,31 @@ fn extract_task_id_from_create(label: &str) -> String {
 }
 
 fn extract_status_and_id(label: &str) -> (&str, String) {
-    // Format: "completed #42" or "in_progress #3"
-    let parts: Vec<&str> = label.splitn(2, ' ').collect();
-    if parts.len() == 2 {
-        let status = parts[0];
-        let id = parts[1].trim_start_matches('#').to_string();
-        (status, id)
+    let mut parts = label.split_whitespace();
+    if let (Some(status), Some(id)) = (parts.next(), parts.next()) {
+        (status, id.trim_start_matches('#').to_string())
     } else {
         ("", String::new())
+    }
+}
+
+fn parse_todo_write_progress(label: &str) -> Vec<(String, TaskStatus)> {
+    label
+        .split([',', ';'])
+        .filter_map(|item| {
+            let (status, id) = extract_status_and_id(item.trim());
+            let status = parse_task_status(status)?;
+            (!id.is_empty()).then_some((id, status))
+        })
+        .collect()
+}
+
+fn parse_task_status(status: &str) -> Option<TaskStatus> {
+    match status {
+        "pending" => Some(TaskStatus::Pending),
+        "in_progress" | "in-progress" => Some(TaskStatus::InProgress),
+        "completed" | "done" => Some(TaskStatus::Completed),
+        _ => None,
     }
 }
 
@@ -324,7 +355,10 @@ mod tests {
             ("WebFetch", 117),
             ("WebSearch", 117),
             ("TaskCreate", 223),
+            ("TaskCreated", 223),
             ("TaskUpdate", 223),
+            ("TaskCompleted", 223),
+            ("TodoWrite", 223),
             ("Skill", 182),
             ("AskUserQuestion", 216),
             ("UnknownTool", 252),
@@ -406,6 +440,63 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_task_progress_from_task_completed_event() {
+        let entries = vec![
+            ActivityEntry {
+                timestamp: "14:32".into(),
+                tool: "TaskCompleted".into(),
+                label: "completed #1".into(),
+            },
+            ActivityEntry {
+                timestamp: "14:31".into(),
+                tool: "TaskCreated".into(),
+                label: "#1 First task".into(),
+            },
+        ];
+
+        let progress = parse_task_progress(&entries);
+
+        assert_eq!(progress.total_count(), 1);
+        assert_eq!(progress.completed_count(), 1);
+    }
+
+    #[test]
+    fn test_parse_task_progress_from_todo_write() {
+        let entries = vec![ActivityEntry {
+            timestamp: "14:32".into(),
+            tool: "TodoWrite".into(),
+            label: "completed #1, in_progress #2, pending #3".into(),
+        }];
+
+        let progress = parse_task_progress(&entries);
+
+        assert_eq!(progress.total_count(), 3);
+        assert_eq!(progress.completed_count(), 1);
+        assert_eq!(progress.tasks[1].1, TaskStatus::InProgress);
+    }
+
+    #[test]
+    fn test_parse_task_progress_todo_write_replaces_snapshot() {
+        let entries = vec![
+            ActivityEntry {
+                timestamp: "14:33".into(),
+                tool: "TodoWrite".into(),
+                label: "completed #1, completed #2".into(),
+            },
+            ActivityEntry {
+                timestamp: "14:32".into(),
+                tool: "TodoWrite".into(),
+                label: "completed #1, in_progress #2, pending #3".into(),
+            },
+        ];
+
+        let progress = parse_task_progress(&entries);
+
+        assert_eq!(progress.total_count(), 2);
+        assert_eq!(progress.completed_count(), 2);
+    }
+
+    #[test]
     fn test_extract_task_id_from_create_no_hash() {
         assert_eq!(extract_task_id_from_create("Just a subject"), "");
     }
@@ -417,7 +508,7 @@ mod tests {
 
     #[test]
     fn test_extract_status_and_id() {
-        let (status, id) = extract_status_and_id("completed #5");
+        let (status, id) = extract_status_and_id("completed #5 with label");
         assert_eq!(status, "completed");
         assert_eq!(id, "5");
     }

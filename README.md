@@ -164,14 +164,16 @@ The third argument passed to `hook` maps to the following agent state transition
 
 | Event | Effect |
 |---|---|
-| `user-prompt-submit` | Mark agent as `running`; record the user prompt |
+| `user-prompt-submit` | Mark agent as `running`; record the user prompt and turn start time |
 | `notification` | Mark agent as `waiting` (e.g. permission request) |
 | `stop` | Mark agent as `idle`; record the last response |
 | `stop-failure` | Mark agent as `error` |
-| `session-start` | Reset agent state |
+| `session-start` | Reset agent state and record the session start time |
 | `session-end` | Clear state and activity log |
 | `activity-log` | Append a tool-use entry to the activity log |
 | `subagent-start` / `subagent-stop` | Track active subagents |
+
+The agent row shows `session <elapsed>` from `session-start`. While a turn is running, waiting for permission, or in error, it also shows `turn <elapsed>` from the latest `user-prompt-submit`. The legacy `agent_started_at` variable remains a turn-start alias for older hook integrations.
 
 Replace `claude` with `codex` for Codex hooks.
 

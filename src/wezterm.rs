@@ -130,6 +130,8 @@ pub struct PaneInfo {
     pub prompt: String,
     pub prompt_is_response: bool,
     pub started_at: Option<u64>,
+    pub session_started_at: Option<u64>,
+    pub turn_started_at: Option<u64>,
     pub wait_reason: String,
     pub permission_mode: PermissionMode,
     pub subagents: Vec<String>,
@@ -297,10 +299,9 @@ fn parse_pane_info(raw: &RawWezTermPane) -> Option<PaneInfo> {
         .get("agent_prompt_source")
         .is_some_and(|s| s == "response");
 
-    let started_at = raw
-        .user_vars
-        .get("agent_started_at")
-        .and_then(|s| s.parse::<u64>().ok());
+    let started_at = parse_time_var(&raw.user_vars, "agent_started_at");
+    let session_started_at = parse_time_var(&raw.user_vars, "agent_session_started_at");
+    let turn_started_at = parse_time_var(&raw.user_vars, "agent_turn_started_at").or(started_at);
 
     let wait_reason = raw
         .user_vars
@@ -333,11 +334,17 @@ fn parse_pane_info(raw: &RawWezTermPane) -> Option<PaneInfo> {
         path,
         prompt,
         prompt_is_response,
-        started_at,
+        started_at: turn_started_at,
+        session_started_at,
+        turn_started_at,
         wait_reason,
         permission_mode,
         subagents,
     })
+}
+
+fn parse_time_var(user_vars: &HashMap<String, String>, key: &str) -> Option<u64> {
+    user_vars.get(key).and_then(|s| s.parse::<u64>().ok())
 }
 
 /// Simple URL decoding for file:// paths (handles %20, etc.)
@@ -523,6 +530,66 @@ mod tests {
     }
 
     #[test]
+    fn test_build_workspaces_parses_session_and_turn_times() {
+        let mut user_vars = HashMap::new();
+        user_vars.insert("agent_type".to_string(), "claude".to_string());
+        user_vars.insert("agent_status".to_string(), "running".to_string());
+        user_vars.insert("agent_started_at".to_string(), "90".to_string());
+        user_vars.insert("agent_session_started_at".to_string(), "100".to_string());
+        user_vars.insert("agent_turn_started_at".to_string(), "120".to_string());
+
+        let raw = vec![RawWezTermPane {
+            window_id: 0,
+            tab_id: 0,
+            tab_title: "test".to_string(),
+            pane_id: 1,
+            workspace: "default".to_string(),
+            title: "claude".to_string(),
+            cwd: "file:///home/user/project".to_string(),
+            is_active: true,
+            is_zoomed: false,
+            tty_name: String::new(),
+            user_vars,
+        }];
+
+        let result = build_workspaces(raw, None);
+        let pane = &result[0].tabs[0].panes[0];
+
+        assert_eq!(pane.started_at, Some(120));
+        assert_eq!(pane.session_started_at, Some(100));
+        assert_eq!(pane.turn_started_at, Some(120));
+    }
+
+    #[test]
+    fn test_build_workspaces_uses_legacy_started_at_for_turn() {
+        let mut user_vars = HashMap::new();
+        user_vars.insert("agent_type".to_string(), "claude".to_string());
+        user_vars.insert("agent_status".to_string(), "running".to_string());
+        user_vars.insert("agent_started_at".to_string(), "90".to_string());
+
+        let raw = vec![RawWezTermPane {
+            window_id: 0,
+            tab_id: 0,
+            tab_title: "test".to_string(),
+            pane_id: 1,
+            workspace: "default".to_string(),
+            title: "claude".to_string(),
+            cwd: "file:///home/user/project".to_string(),
+            is_active: true,
+            is_zoomed: false,
+            tty_name: String::new(),
+            user_vars,
+        }];
+
+        let result = build_workspaces(raw, None);
+        let pane = &result[0].tabs[0].panes[0];
+
+        assert_eq!(pane.started_at, Some(90));
+        assert_eq!(pane.session_started_at, None);
+        assert_eq!(pane.turn_started_at, Some(90));
+    }
+
+    #[test]
     fn test_permission_mode_from_str() {
         assert_eq!(PermissionMode::from_str("plan"), PermissionMode::Plan);
         assert_eq!(
@@ -576,6 +643,8 @@ mod tests {
                         prompt: String::new(),
                         prompt_is_response: false,
                         started_at: None,
+                        session_started_at: None,
+                        turn_started_at: None,
                         wait_reason: String::new(),
                         permission_mode: PermissionMode::Default,
                         subagents: Vec::new(),
@@ -593,6 +662,8 @@ mod tests {
                         prompt: String::new(),
                         prompt_is_response: false,
                         started_at: None,
+                        session_started_at: None,
+                        turn_started_at: None,
                         wait_reason: String::new(),
                         permission_mode: PermissionMode::Default,
                         subagents: Vec::new(),
@@ -624,6 +695,8 @@ mod tests {
                     prompt: String::new(),
                     prompt_is_response: false,
                     started_at: None,
+                    session_started_at: None,
+                    turn_started_at: None,
                     wait_reason: String::new(),
                     permission_mode: PermissionMode::Default,
                     subagents: Vec::new(),

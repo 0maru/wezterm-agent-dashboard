@@ -14,6 +14,8 @@ const ALL_AGENT_VARS: &[&str] = &[
     "agent_prompt",
     "agent_prompt_source",
     "agent_started_at",
+    "agent_session_started_at",
+    "agent_turn_started_at",
     "agent_wait_reason",
     "agent_permission_mode",
     "agent_subagents",
@@ -70,6 +72,7 @@ fn handle_user_prompt_submit(agent: &str, input: &Value) {
         ("agent_status", "running"),
         ("agent_attention", ""),
         ("agent_started_at", &now),
+        ("agent_turn_started_at", &now),
         ("agent_wait_reason", ""),
     ];
 
@@ -139,8 +142,14 @@ fn handle_stop_failure(agent: &str, input: &Value) {
 }
 
 fn handle_session_start(agent: &str) {
+    let now = current_epoch().to_string();
+
     user_vars::clear_user_vars(ALL_AGENT_VARS);
-    user_vars::set_user_vars(&[("agent_type", agent), ("agent_status", "idle")]);
+    user_vars::set_user_vars(&[
+        ("agent_type", agent),
+        ("agent_status", "idle"),
+        ("agent_session_started_at", &now),
+    ]);
 }
 
 fn handle_session_end(pane_id: &str) {

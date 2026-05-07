@@ -157,7 +157,7 @@ impl Widget for AgentList<'_> {
                     .get(self.state.agents.selected_row)
                     .is_some_and(|t| t.pane_id == pane.pane_id);
 
-                // Line 1: status icon + agent type + permission badge + elapsed time
+                // 1行目: 状態、エージェント種別、権限、時間
                 let mut spans = Vec::new();
 
                 // Status icon
@@ -208,13 +208,29 @@ impl Widget for AgentList<'_> {
                     ));
                 }
 
-                // Elapsed time
-                if let Some(started) = pane.started_at {
+                // セッション時間
+                if let Some(started) = pane.session_started_at {
                     let elapsed = text::format_elapsed(self.state.now, started);
                     if !elapsed.is_empty() {
                         spans.push(Span::raw("  "));
                         spans.push(Span::styled(
-                            elapsed,
+                            format!("session {elapsed}"),
+                            Style::default().fg(self.state.ui.theme.elapsed_time),
+                        ));
+                    }
+                }
+
+                // 実行中 turn の時間
+                if matches!(
+                    pane.status,
+                    PaneStatus::Running | PaneStatus::Waiting | PaneStatus::Error
+                ) && let Some(started) = pane.turn_started_at
+                {
+                    let elapsed = text::format_elapsed(self.state.now, started);
+                    if !elapsed.is_empty() {
+                        spans.push(Span::raw("  "));
+                        spans.push(Span::styled(
+                            format!("turn {elapsed}"),
                             Style::default().fg(self.state.ui.theme.elapsed_time),
                         ));
                     }

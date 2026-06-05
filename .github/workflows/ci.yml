@@ -7,6 +7,12 @@ on:
 env:
   CARGO_TERM_COLOR: always
 jobs:
+  release-targets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: bash scripts/check-release-targets.sh
+
   quality:
     runs-on: ubuntu-latest
     steps:

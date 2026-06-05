@@ -24,6 +24,7 @@ M.config = {
     sidebar_position = "Right",
     show_status_bar = true,
     binary_name = "wezterm-agent-dashboard",
+    state_file = nil,
     tab_status = {
         enabled = false,
         reset_on_active = true,
@@ -51,6 +52,89 @@ function M.setup(user_config)
     if user_config then
         merge_config(M.config, user_config)
     end
+end
+
+-- ---------------------------------------------------------------------------
+-- Rust TUI 向け pane state snapshot
+-- ---------------------------------------------------------------------------
+
+local function sanitize_state_path_component(value)
+    local sanitized = string.gsub(value or "", "[^%w%._-]", "_")
+    if sanitized == "" then
+        return "default"
+    end
+    return sanitized
+end
+
+local function state_file_path()
+    if M.config.state_file and M.config.state_file ~= "" then
+        return M.config.state_file
+    end
+
+    local env_path = os.getenv("WEZTERM_AGENT_DASHBOARD_STATE")
+    if env_path and env_path ~= "" then
+        return env_path
+    end
+
+    local user = os.getenv("USER") or os.getenv("USERNAME") or "default"
+    return "/tmp/wezterm-agent-dashboard-panes-" .. sanitize_state_path_component(user) .. ".json"
+end
+
+local function write_pane_user_vars_snapshot()
+    local success, all_panes = pcall(function()
+        return wezterm.mux.all_panes()
+    end)
+
+    if not success or not all_panes then
+        return
+    end
+
+    local panes = {}
+    for _, pane in ipairs(all_panes) do
+        local id_ok, pane_id = pcall(function()
+            return pane:pane_id()
+        end)
+        local vars_ok, vars = pcall(function()
+            return pane:get_user_vars()
+        end)
+
+        if id_ok and pane_id and vars_ok and vars then
+            local has_vars = false
+            for _ in pairs(vars) do
+                has_vars = true
+                break
+            end
+
+            if has_vars then
+                table.insert(panes, {
+                    pane_id = pane_id,
+                    user_vars = vars,
+                })
+            end
+        end
+    end
+
+    local encoded_ok, encoded = pcall(function()
+        return wezterm.json_encode({
+            updated_at = os.time(),
+            panes = panes,
+        })
+    end)
+    if not encoded_ok or not encoded then
+        return
+    end
+
+    local path = state_file_path()
+    local tmp_path = path .. ".tmp"
+    local file = io.open(tmp_path, "w")
+    if not file then
+        return
+    end
+
+    file:write(encoded)
+    file:write("\n")
+    file:close()
+    os.rename(tmp_path, path)
 end
 
 -- ---------------------------------------------------------------------------
@@ -340,6 +424,9 @@ local function create_toggle_action()
             direction = direction,
             size = M.config.sidebar_percent / 100.0,
             args = { bin },
+            set_environment_variables = {
+                WEZTERM_AGENT_DASHBOARD_STATE = state_file_path(),
+            },
         })
     end)
 end
@@ -353,15 +440,17 @@ function M.apply_to_config(config)
         register_tab_status_handlers()
     end
 
-    -- Register status bar handler
-    if M.config.show_status_bar then
-        wezterm.on("update-status", function(window, pane)
+    -- pane state snapshot と status bar handler を登録
+    wezterm.on("update-status", function(window, pane)
+        write_pane_user_vars_snapshot()
+
+        if M.config.show_status_bar then
             local status = build_status_bar()
             if status ~= "" then
                 window:set_right_status(status)
             end
-        end)
-    end
+        end
+    end)
 
     -- Add toggle keybinding
     config.keys = config.keys or {}

@@ -1,4 +1,4 @@
-use std::process::Command;
+use std::process::{Command, Output, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
@@ -9,6 +9,7 @@ const GIT_LOOP_INTERVAL: Duration = Duration::from_millis(250);
 const GIT_SUMMARY_TTL: Duration = Duration::from_secs(2);
 const GIT_PR_TTL: Duration = Duration::from_secs(30);
 const GIT_PR_LAZY_DELAY: Duration = Duration::from_secs(3);
+const GIT_PR_COMMAND_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Clone, Copy)]
 struct GitPollConfig {
@@ -165,6 +166,27 @@ fn git_cmd(cwd: &str, args: &[&str]) -> Option<String> {
     Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
+fn command_output_with_timeout(mut command: Command, timeout: Duration) -> Option<Output> {
+    command.stdout(Stdio::piped()).stderr(Stdio::null());
+
+    let started_at = Instant::now();
+    let mut child = command.spawn().ok()?;
+
+    loop {
+        if child.try_wait().ok()?.is_some() {
+            return child.wait_with_output().ok();
+        }
+
+        if started_at.elapsed() >= timeout {
+            let _ = child.kill();
+            let _ = child.wait();
+            return None;
+        }
+
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+
 fn parse_numstat(
     numstat: &str,
     files: &mut [GitFileStatus],
@@ -206,11 +228,12 @@ fn normalize_remote_url(url: &str) -> String {
 }
 
 fn fetch_pr_number(cwd: &str) -> Option<u32> {
-    let output = Command::new("gh")
+    let mut command = Command::new("gh");
+    command
         .args(["pr", "view", "--json", "number", "-q", ".number"])
-        .current_dir(cwd)
-        .output()
-        .ok()?;
+        .current_dir(cwd);
+
+    let output = command_output_with_timeout(command, GIT_PR_COMMAND_TIMEOUT)?;
 
     if !output.status.success() {
         return None;
@@ -538,6 +561,27 @@ mod tests {
         let data = fetch_git_data("");
         assert!(data.branch.is_empty());
         assert!(data.path.is_empty());
+    }
+
+    #[test]
+    fn test_command_output_with_timeout_returns_output() {
+        let mut command = Command::new("sh");
+        command.args(["-c", "printf 42"]);
+
+        let output = command_output_with_timeout(command, Duration::from_secs(1)).unwrap();
+
+        assert!(output.status.success());
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "42");
+    }
+
+    #[test]
+    fn test_command_output_with_timeout_kills_slow_command() {
+        let mut command = Command::new("sh");
+        command.args(["-c", "sleep 1; printf 42"]);
+
+        let output = command_output_with_timeout(command, Duration::from_millis(20));
+
+        assert!(output.is_none());
     }
 
     #[test]

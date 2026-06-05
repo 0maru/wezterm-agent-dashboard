@@ -104,41 +104,80 @@ pub struct RefreshActions {
 
 pub struct AppState {
     pub now: u64,
-    pub workspaces: Vec<WorkspaceInfo>,
-    pub repo_groups: Vec<RepoGroup>,
     pub dashboard_pane_id: u64,
+    pub snapshot: WezTermSnapshot,
+    pub repos: RepoState,
+    pub ui: UiState,
+    pub agents: AgentListState,
+    pub activity: ActivityState,
+}
+
+#[derive(Debug, Default)]
+pub struct WezTermSnapshot {
+    pub workspaces: Vec<WorkspaceInfo>,
+    pub focused_pane_id: Option<u64>,
+}
+
+#[derive(Debug, Default)]
+pub struct RepoState {
+    pub groups: Vec<RepoGroup>,
+    pub git: GitData,
+    pub info_cache: HashMap<String, PaneGitInfo>,
+    pub pending_paths: HashSet<String>,
+    pub last_git_path: Option<String>,
+}
+
+#[derive(Debug)]
+pub struct UiState {
     pub focus: Focus,
     pub spinner_frame: usize,
-
-    // Agent list
-    pub selected_agent_row: usize,
-    pub agent_row_targets: Vec<RowTarget>,
-
-    // Activity log
-    pub activity_entries: Vec<ActivityEntry>,
-
-    // Focused pane tracking
-    pub focused_pane_id: Option<u64>,
-
-    // Theme
     pub theme: ColorTheme,
-
-    // Bottom panel
     pub bottom_tab: BottomTab,
-    pub git: GitData,
+    pub filters: FilterState,
+}
 
-    // Task progress
+impl Default for UiState {
+    fn default() -> Self {
+        Self {
+            focus: Focus::Agents,
+            spinner_frame: 0,
+            theme: ColorTheme::default(),
+            bottom_tab: BottomTab::Activity,
+            filters: FilterState::default(),
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct AgentListState {
+    pub selected_row: usize,
+    pub row_targets: Vec<RowTarget>,
+}
+
+#[derive(Debug, Default)]
+pub struct ActivityState {
+    pub entries: Vec<ActivityEntry>,
     pub pane_task_progress: HashMap<u64, TaskProgress>,
-    pub activity_cache: HashMap<u64, CachedActivity>,
-    pub repo_info_cache: HashMap<String, PaneGitInfo>,
-    pub pending_repo_paths: HashSet<String>,
-    pub last_git_path: Option<String>,
+    pub cache: HashMap<u64, CachedActivity>,
+}
 
-    // Filters
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FilterState {
     pub agent_filter: AgentFilter,
     pub repo_filter: RepoFilter,
     pub repo_popup_open: bool,
     pub repo_popup_selected: usize,
+}
+
+impl Default for FilterState {
+    fn default() -> Self {
+        Self {
+            agent_filter: AgentFilter::All,
+            repo_filter: RepoFilter::All,
+            repo_popup_open: false,
+            repo_popup_selected: 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -157,27 +196,12 @@ impl AppState {
     pub fn new(dashboard_pane_id: u64) -> Self {
         Self {
             now: current_epoch(),
-            workspaces: Vec::new(),
-            repo_groups: Vec::new(),
             dashboard_pane_id,
-            focus: Focus::Agents,
-            spinner_frame: 0,
-            selected_agent_row: 0,
-            agent_row_targets: Vec::new(),
-            activity_entries: Vec::new(),
-            focused_pane_id: None,
-            theme: ColorTheme::default(),
-            bottom_tab: BottomTab::Activity,
-            git: GitData::default(),
-            pane_task_progress: HashMap::new(),
-            activity_cache: HashMap::new(),
-            repo_info_cache: HashMap::new(),
-            pending_repo_paths: HashSet::new(),
-            last_git_path: None,
-            agent_filter: AgentFilter::All,
-            repo_filter: RepoFilter::All,
-            repo_popup_open: false,
-            repo_popup_selected: 0,
+            snapshot: WezTermSnapshot::default(),
+            repos: RepoState::default(),
+            ui: UiState::default(),
+            agents: AgentListState::default(),
+            activity: ActivityState::default(),
         }
     }
 
@@ -225,21 +249,22 @@ impl AppState {
     }
 
     fn refresh_wezterm_snapshot(&mut self) {
-        self.workspaces = wezterm::query_workspaces(Some(self.dashboard_pane_id));
+        self.snapshot.workspaces = wezterm::query_workspaces(Some(self.dashboard_pane_id));
 
-        let new_focused = wezterm::find_focused_pane(&self.workspaces, self.dashboard_pane_id);
+        let new_focused =
+            wezterm::find_focused_pane(&self.snapshot.workspaces, self.dashboard_pane_id);
         if let Some(fid) = new_focused
-            && self.focused_pane_id != Some(fid)
+            && self.snapshot.focused_pane_id != Some(fid)
         {
-            self.focused_pane_id = Some(fid);
+            self.snapshot.focused_pane_id = Some(fid);
         }
     }
 
     fn refresh_repo_groups(&mut self) -> Vec<String> {
-        self.repo_groups = group::group_panes_by_repo(
-            &self.workspaces,
-            self.focused_pane_id,
-            &self.repo_info_cache,
+        self.repos.groups = group::group_panes_by_repo(
+            &self.snapshot.workspaces,
+            self.snapshot.focused_pane_id,
+            &self.repos.info_cache,
         );
         self.prune_repo_cache();
         self.collect_missing_repo_paths()
@@ -247,14 +272,14 @@ impl AppState {
 
     fn prune_repo_cache(&mut self) {
         let mut active_paths = HashSet::new();
-        for ws in &self.workspaces {
+        for ws in &self.snapshot.workspaces {
             for tab in &ws.tabs {
                 for pane in &tab.panes {
                     active_paths.insert(pane.path.clone());
                 }
             }
         }
-        self.repo_info_cache.retain(|cache_key, info| {
+        self.repos.info_cache.retain(|cache_key, info| {
             active_paths.contains(cache_key)
                 || info.repo_root.as_ref().is_some_and(|repo_root| {
                     let repo_root = Path::new(repo_root);
@@ -263,23 +288,24 @@ impl AppState {
                         .any(|path| Path::new(path).starts_with(repo_root))
                 })
         });
-        self.pending_repo_paths
+        self.repos
+            .pending_paths
             .retain(|path| active_paths.contains(path));
     }
 
     fn collect_missing_repo_paths(&mut self) -> Vec<String> {
         let mut missing_paths = Vec::new();
 
-        for ws in &self.workspaces {
+        for ws in &self.snapshot.workspaces {
             for tab in &ws.tabs {
                 for pane in &tab.panes {
-                    if group::lookup_cached_git_info_for_path(&pane.path, &self.repo_info_cache)
+                    if group::lookup_cached_git_info_for_path(&pane.path, &self.repos.info_cache)
                         .is_some()
                     {
                         continue;
                     }
 
-                    if self.pending_repo_paths.insert(pane.path.clone()) {
+                    if self.repos.pending_paths.insert(pane.path.clone()) {
                         missing_paths.push(pane.path.clone());
                     }
                 }
@@ -290,17 +316,19 @@ impl AppState {
     }
 
     fn store_repo_info(&mut self, path: String, info: PaneGitInfo) -> bool {
-        self.pending_repo_paths.remove(&path);
+        self.repos.pending_paths.remove(&path);
 
         let mut changed = self
-            .repo_info_cache
+            .repos
+            .info_cache
             .insert(path.clone(), info.clone())
             .as_ref()
             != Some(&info);
 
         if let Some(repo_root) = info.repo_root.as_ref() {
             changed |= self
-                .repo_info_cache
+                .repos
+                .info_cache
                 .insert(repo_root.clone(), info.clone())
                 .as_ref()
                 != Some(&info);
@@ -312,27 +340,27 @@ impl AppState {
     /// Rebuild the flat list of selectable agent rows from groups.
     pub(crate) fn rebuild_row_targets(&mut self) {
         // Validate repo filter
-        if let RepoFilter::Repo(ref id) = self.repo_filter
-            && !self.repo_groups.iter().any(|g| g.id == *id)
+        if let RepoFilter::Repo(ref id) = self.ui.filters.repo_filter
+            && !self.repos.groups.iter().any(|g| g.id == *id)
         {
-            self.repo_filter = RepoFilter::All;
+            self.ui.filters.repo_filter = RepoFilter::All;
         }
 
-        self.agent_row_targets.clear();
+        self.agents.row_targets.clear();
 
-        for group in &self.repo_groups {
-            if let RepoFilter::Repo(ref id) = self.repo_filter
+        for group in &self.repos.groups {
+            if let RepoFilter::Repo(ref id) = self.ui.filters.repo_filter
                 && group.id != *id
             {
                 continue;
             }
 
             for (pane, _git_info) in &group.panes {
-                if !self.agent_filter.matches(pane.status) {
+                if !self.ui.filters.agent_filter.matches(pane.status) {
                     continue;
                 }
 
-                self.agent_row_targets.push(RowTarget {
+                self.agents.row_targets.push(RowTarget {
                     pane_id: pane.pane_id,
                     tab_id: pane.tab_id,
                     agent: pane.agent,
@@ -341,12 +369,13 @@ impl AppState {
         }
 
         // Clamp selected row
-        if !self.agent_row_targets.is_empty() {
-            self.selected_agent_row = self
-                .selected_agent_row
-                .min(self.agent_row_targets.len() - 1);
+        if !self.agents.row_targets.is_empty() {
+            self.agents.selected_row = self
+                .agents
+                .selected_row
+                .min(self.agents.row_targets.len() - 1);
         } else {
-            self.selected_agent_row = 0;
+            self.agents.selected_row = 0;
         }
     }
 
@@ -362,7 +391,8 @@ impl AppState {
 
     fn tracked_activity_panes(&self) -> HashSet<u64> {
         let mut tracked_panes: HashSet<u64> = self
-            .agent_row_targets
+            .agents
+            .row_targets
             .iter()
             .map(|target| target.pane_id)
             .collect();
@@ -375,7 +405,8 @@ impl AppState {
     }
 
     fn active_focus_pane_id(&self) -> Option<u64> {
-        self.focused_pane_id
+        self.snapshot
+            .focused_pane_id
             .filter(|pane_id| self.find_pane(*pane_id).is_some())
     }
 
@@ -388,7 +419,7 @@ impl AppState {
                 ActivityCachePolicy::ReuseCached => None,
             };
 
-            let should_refresh = match (self.activity_cache.get(pane_id), fingerprint.as_ref()) {
+            let should_refresh = match (self.activity.cache.get(pane_id), fingerprint.as_ref()) {
                 (None, _) => true,
                 (Some(_), None) => false,
                 (Some(cached), Some(fingerprint)) => cached.fingerprint != *fingerprint,
@@ -399,7 +430,7 @@ impl AppState {
                     fingerprint.unwrap_or_else(|| activity::log_fingerprint(*pane_id));
                 let snapshot =
                     activity::read_activity_snapshot(*pane_id, ACTIVITY_MAX_ENTRIES, 100);
-                self.activity_cache.insert(
+                self.activity.cache.insert(
                     *pane_id,
                     CachedActivity {
                         fingerprint,
@@ -409,28 +440,30 @@ impl AppState {
             }
         }
 
-        self.activity_cache
+        self.activity
+            .cache
             .retain(|id, _| tracked_panes.contains(id));
     }
 
     fn refresh_activity_view(&mut self) {
         let activity_pane_id = self
             .active_focus_pane_id()
-            .or_else(|| self.agent_row_targets.first().map(|target| target.pane_id));
+            .or_else(|| self.agents.row_targets.first().map(|target| target.pane_id));
 
-        self.activity_entries = activity_pane_id
-            .and_then(|pane_id| self.activity_cache.get(&pane_id))
+        self.activity.entries = activity_pane_id
+            .and_then(|pane_id| self.activity.cache.get(&pane_id))
             .map(|cached| cached.snapshot.display_entries.clone())
             .unwrap_or_default();
 
-        self.pane_task_progress.clear();
-        for target in &self.agent_row_targets {
-            let Some(cached) = self.activity_cache.get(&target.pane_id) else {
+        self.activity.pane_task_progress.clear();
+        for target in &self.agents.row_targets {
+            let Some(cached) = self.activity.cache.get(&target.pane_id) else {
                 continue;
             };
 
             if !cached.snapshot.task_progress.is_empty() {
-                self.pane_task_progress
+                self.activity
+                    .pane_task_progress
                     .insert(target.pane_id, cached.snapshot.task_progress.clone());
             }
         }
@@ -438,7 +471,8 @@ impl AppState {
 
     fn refresh_git_target(&mut self) -> Option<String> {
         let path = self.active_focus_pane_id().and_then(|pane_id| {
-            self.repo_groups
+            self.repos
+                .groups
                 .iter()
                 .flat_map(|group| group.panes.iter())
                 .find(|(pane, _)| pane.pane_id == pane_id)
@@ -450,8 +484,8 @@ impl AppState {
                 })
         });
 
-        if path != self.last_git_path {
-            self.last_git_path = path.clone();
+        if path != self.repos.last_git_path {
+            self.repos.last_git_path = path.clone();
             return Some(path.unwrap_or_default());
         }
 
@@ -466,8 +500,8 @@ impl AppState {
         let mut idle = 0;
         let mut error = 0;
 
-        for group in &self.repo_groups {
-            if let RepoFilter::Repo(ref id) = self.repo_filter
+        for group in &self.repos.groups {
+            if let RepoFilter::Repo(ref id) = self.ui.filters.repo_filter
                 && group.id != *id
             {
                 continue;
@@ -489,7 +523,7 @@ impl AppState {
 
     /// Get the currently selected pane info.
     pub fn selected_pane(&self) -> Option<&RowTarget> {
-        self.agent_row_targets.get(self.selected_agent_row)
+        self.agents.row_targets.get(self.agents.selected_row)
     }
 
     /// Navigate to the selected agent's pane.
@@ -501,21 +535,22 @@ impl AppState {
 
     /// Move selection up.
     pub fn select_prev(&mut self) {
-        if self.selected_agent_row > 0 {
-            self.selected_agent_row -= 1;
+        if self.agents.selected_row > 0 {
+            self.agents.selected_row -= 1;
         }
     }
 
     /// Move selection down.
     pub fn select_next(&mut self) {
-        if self.selected_agent_row + 1 < self.agent_row_targets.len() {
-            self.selected_agent_row += 1;
+        if self.agents.selected_row + 1 < self.agents.row_targets.len() {
+            self.agents.selected_row += 1;
         }
     }
 
     /// Get repo entries for the filter popup: (id, display_name).
     pub fn repo_entries(&self) -> Vec<(String, String)> {
-        self.repo_groups
+        self.repos
+            .groups
             .iter()
             .map(|g| (g.id.clone(), g.name.clone()))
             .collect()
@@ -523,7 +558,7 @@ impl AppState {
 
     /// Find a specific pane by ID across all groups.
     pub fn find_pane(&self, pane_id: u64) -> Option<&PaneInfo> {
-        for group in &self.repo_groups {
+        for group in &self.repos.groups {
             for (pane, _) in &group.panes {
                 if pane.pane_id == pane_id {
                     return Some(pane);
@@ -633,13 +668,13 @@ mod tests {
 
     fn make_state_with_groups(groups: Vec<RepoGroup>) -> AppState {
         let mut state = AppState::new(999);
-        state.repo_groups = groups;
+        state.repos.groups = groups;
         // Manually build row targets
-        state.agent_row_targets.clear();
-        for group in &state.repo_groups {
+        state.agents.row_targets.clear();
+        for group in &state.repos.groups {
             for (pane, _) in &group.panes {
-                if state.agent_filter.matches(pane.status) {
-                    state.agent_row_targets.push(RowTarget {
+                if state.ui.filters.agent_filter.matches(pane.status) {
+                    state.agents.row_targets.push(RowTarget {
                         pane_id: pane.pane_id,
                         tab_id: pane.tab_id,
                         agent: pane.agent,
@@ -693,7 +728,7 @@ mod tests {
             },
         ];
         let mut state = make_state_with_groups(groups);
-        state.repo_filter = RepoFilter::Repo("/tmp/project-b".into());
+        state.ui.filters.repo_filter = RepoFilter::Repo("/tmp/project-b".into());
 
         let (all, running, _waiting, idle, error) = state.status_counts();
         assert_eq!(all, 2);
@@ -715,23 +750,23 @@ mod tests {
             ],
         }];
         let mut state = make_state_with_groups(groups);
-        assert_eq!(state.selected_agent_row, 0);
+        assert_eq!(state.agents.selected_row, 0);
 
         state.select_next();
-        assert_eq!(state.selected_agent_row, 1);
+        assert_eq!(state.agents.selected_row, 1);
         state.select_next();
-        assert_eq!(state.selected_agent_row, 2);
+        assert_eq!(state.agents.selected_row, 2);
         state.select_next();
         // Should stay at 2 (boundary)
-        assert_eq!(state.selected_agent_row, 2);
+        assert_eq!(state.agents.selected_row, 2);
 
         state.select_prev();
-        assert_eq!(state.selected_agent_row, 1);
+        assert_eq!(state.agents.selected_row, 1);
         state.select_prev();
-        assert_eq!(state.selected_agent_row, 0);
+        assert_eq!(state.agents.selected_row, 0);
         state.select_prev();
         // Should stay at 0 (boundary)
-        assert_eq!(state.selected_agent_row, 0);
+        assert_eq!(state.agents.selected_row, 0);
     }
 
     #[test]
@@ -825,7 +860,7 @@ mod tests {
         let mut state = make_state_with_groups(groups);
 
         // Filter to foo/api by id
-        state.repo_filter = RepoFilter::Repo("/home/user/foo/api".into());
+        state.ui.filters.repo_filter = RepoFilter::Repo("/home/user/foo/api".into());
         state.rebuild_row_targets();
 
         let (all, running, _, _, _) = state.status_counts();
@@ -833,7 +868,7 @@ mod tests {
         assert_eq!(running, 1);
 
         // Filter to bar/api by id
-        state.repo_filter = RepoFilter::Repo("/home/user/bar/api".into());
+        state.ui.filters.repo_filter = RepoFilter::Repo("/home/user/bar/api".into());
         state.rebuild_row_targets();
 
         let (all, _, _, idle, error) = state.status_counts();
@@ -853,11 +888,11 @@ mod tests {
         let mut state = make_state_with_groups(groups);
 
         // Set a filter with a non-existent id
-        state.repo_filter = RepoFilter::Repo("/nonexistent".into());
+        state.ui.filters.repo_filter = RepoFilter::Repo("/nonexistent".into());
         state.rebuild_row_targets();
 
         // Should have been reset to All
-        assert_eq!(state.repo_filter, RepoFilter::All);
+        assert_eq!(state.ui.filters.repo_filter, RepoFilter::All);
     }
 }
 
@@ -912,7 +947,7 @@ mod integration_tests {
         let pane1 = make_pane_with_path(1, PaneStatus::Running, "/repo-a");
         let pane2 = make_pane_with_path(2, PaneStatus::Idle, "/repo-b");
         let mut state = AppState::new(999);
-        state.repo_groups = vec![
+        state.repos.groups = vec![
             RepoGroup {
                 id: "/repo-a".into(),
                 name: "repo-a".into(),
@@ -940,8 +975,8 @@ mod integration_tests {
                 )],
             },
         ];
-        state.focused_pane_id = Some(1);
-        state.activity_cache.insert(
+        state.snapshot.focused_pane_id = Some(1);
+        state.activity.cache.insert(
             1,
             make_cached_activity(
                 "focused activity",
@@ -950,7 +985,7 @@ mod integration_tests {
                 },
             ),
         );
-        state.activity_cache.insert(
+        state.activity.cache.insert(
             2,
             make_cached_activity(
                 "other activity",
@@ -962,29 +997,29 @@ mod integration_tests {
 
         let git_path = state.refresh_local_views();
         assert_eq!(git_path.as_deref(), Some("/repo-a"));
-        assert_eq!(state.agent_row_targets.len(), 2);
-        assert_eq!(state.activity_entries.len(), 1);
-        assert_eq!(state.activity_entries[0].label, "focused activity");
-        assert_eq!(state.pane_task_progress.len(), 2);
+        assert_eq!(state.agents.row_targets.len(), 2);
+        assert_eq!(state.activity.entries.len(), 1);
+        assert_eq!(state.activity.entries[0].label, "focused activity");
+        assert_eq!(state.activity.pane_task_progress.len(), 2);
 
-        state.repo_filter = RepoFilter::Repo("/repo-b".into());
+        state.ui.filters.repo_filter = RepoFilter::Repo("/repo-b".into());
 
         let git_path = state.refresh_local_views();
         assert_eq!(git_path, None);
-        assert_eq!(state.agent_row_targets.len(), 1);
-        assert_eq!(state.agent_row_targets[0].pane_id, 2);
-        assert_eq!(state.activity_entries[0].label, "focused activity");
-        assert_eq!(state.pane_task_progress.len(), 1);
-        assert!(state.pane_task_progress.contains_key(&2));
-        assert!(state.activity_cache.contains_key(&1));
-        assert!(state.activity_cache.contains_key(&2));
+        assert_eq!(state.agents.row_targets.len(), 1);
+        assert_eq!(state.agents.row_targets[0].pane_id, 2);
+        assert_eq!(state.activity.entries[0].label, "focused activity");
+        assert_eq!(state.activity.pane_task_progress.len(), 1);
+        assert!(state.activity.pane_task_progress.contains_key(&2));
+        assert!(state.activity.cache.contains_key(&1));
+        assert!(state.activity.cache.contains_key(&2));
     }
 
     #[test]
     fn test_refresh_local_views_ignores_stale_focused_pane() {
         let pane1 = make_pane_with_path(1, PaneStatus::Running, "/repo-a");
         let mut state = AppState::new(999);
-        state.repo_groups = vec![RepoGroup {
+        state.repos.groups = vec![RepoGroup {
             id: "/repo-a".into(),
             name: "repo-a".into(),
             has_focus: true,
@@ -997,8 +1032,8 @@ mod integration_tests {
                 },
             )],
         }];
-        state.focused_pane_id = Some(42);
-        state.activity_cache.insert(
+        state.snapshot.focused_pane_id = Some(42);
+        state.activity.cache.insert(
             1,
             make_cached_activity(
                 "visible activity",
@@ -1007,7 +1042,7 @@ mod integration_tests {
                 },
             ),
         );
-        state.activity_cache.insert(
+        state.activity.cache.insert(
             42,
             make_cached_activity(
                 "stale activity",
@@ -1020,18 +1055,18 @@ mod integration_tests {
         let git_path = state.refresh_local_views();
 
         assert_eq!(git_path, None);
-        assert_eq!(state.activity_entries.len(), 1);
-        assert_eq!(state.activity_entries[0].label, "visible activity");
-        assert_eq!(state.pane_task_progress.len(), 1);
-        assert!(state.pane_task_progress.contains_key(&1));
-        assert!(!state.activity_cache.contains_key(&42));
+        assert_eq!(state.activity.entries.len(), 1);
+        assert_eq!(state.activity.entries[0].label, "visible activity");
+        assert_eq!(state.activity.pane_task_progress.len(), 1);
+        assert!(state.activity.pane_task_progress.contains_key(&1));
+        assert!(!state.activity.cache.contains_key(&42));
     }
 
     #[test]
     fn test_apply_repo_info_updates_retargets_git_path_to_repo_root() {
         let pane = make_pane_with_path(1, PaneStatus::Running, "/repo-a/src");
         let mut state = AppState::new(999);
-        state.workspaces = vec![WorkspaceInfo {
+        state.snapshot.workspaces = vec![WorkspaceInfo {
             workspace_name: "default".into(),
             tabs: vec![crate::wezterm::TabInfo {
                 tab_id: 1,
@@ -1040,14 +1075,14 @@ mod integration_tests {
                 panes: vec![pane.clone()],
             }],
         }];
-        state.focused_pane_id = Some(1);
-        state.repo_groups = vec![RepoGroup {
+        state.snapshot.focused_pane_id = Some(1);
+        state.repos.groups = vec![RepoGroup {
             id: "/repo-a/src".into(),
             name: "src".into(),
             has_focus: true,
             panes: vec![(pane, PaneGitInfo::default())],
         }];
-        state.last_git_path = Some("/repo-a/src".into());
+        state.repos.last_git_path = Some("/repo-a/src".into());
 
         let actions = state.apply_repo_info_updates(vec![RepoInfoUpdate {
             path: "/repo-a/src".into(),
@@ -1060,8 +1095,8 @@ mod integration_tests {
 
         assert_eq!(actions.git_path.as_deref(), Some("/repo-a"));
         assert!(actions.repo_paths.is_empty());
-        assert_eq!(state.repo_groups.len(), 1);
-        assert_eq!(state.repo_groups[0].id, "/repo-a");
-        assert_eq!(state.repo_groups[0].name, "repo-a");
+        assert_eq!(state.repos.groups.len(), 1);
+        assert_eq!(state.repos.groups[0].id, "/repo-a");
+        assert_eq!(state.repos.groups[0].name, "repo-a");
     }
 }

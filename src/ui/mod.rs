@@ -59,7 +59,7 @@ impl Widget for Dashboard<'_> {
         for x in chunks[2].x..chunks[2].x + chunks[2].width {
             if let Some(cell) = buf.cell_mut((x, chunks[2].y)) {
                 cell.set_char('─');
-                cell.set_style(Style::default().fg(self.state.theme.inactive_border));
+                cell.set_style(Style::default().fg(self.state.ui.theme.inactive_border));
             }
         }
 
@@ -67,7 +67,7 @@ impl Widget for Dashboard<'_> {
         bottom::BottomTabLabel { state: self.state }.render(chunks[2], buf);
 
         // Bottom panel
-        match self.state.bottom_tab {
+        match self.state.ui.bottom_tab {
             BottomTab::Activity => {
                 bottom::ActivityPanel { state: self.state }.render(chunks[3], buf);
             }
@@ -77,7 +77,7 @@ impl Widget for Dashboard<'_> {
         }
 
         // Repo filter popup (if open)
-        if self.state.repo_popup_open {
+        if self.state.ui.filters.repo_popup_open {
             let entries = self.state.repo_entries();
             let max_name_len = entries
                 .iter()

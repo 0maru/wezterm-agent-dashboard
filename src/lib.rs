@@ -4,6 +4,7 @@ pub mod git;
 pub mod group;
 pub mod state;
 pub mod ui;
+pub mod usage;
 pub mod user_vars;
 pub mod wezterm;
 

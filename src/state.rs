@@ -599,6 +599,7 @@ mod tests {
             wait_reason: String::new(),
             permission_mode: PermissionMode::Default,
             subagents: Vec::new(),
+            usage: crate::usage::UsageStats::default(),
         }
     }
 
@@ -919,6 +920,7 @@ mod integration_tests {
             wait_reason: String::new(),
             permission_mode: PermissionMode::Default,
             subagents: Vec::new(),
+            usage: crate::usage::UsageStats::default(),
         }
     }
 

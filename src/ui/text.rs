@@ -49,6 +49,28 @@ pub fn format_elapsed(now: u64, started_at: u64) -> String {
     }
 }
 
+pub fn format_token_count(tokens: u64) -> String {
+    if tokens >= 1_000_000 {
+        format_compact_decimal(tokens as f64 / 1_000_000.0, "M")
+    } else if tokens >= 1_000 {
+        format_compact_decimal(tokens as f64 / 1_000.0, "k")
+    } else {
+        tokens.to_string()
+    }
+}
+
+pub fn format_cost_usd(cost: f64) -> String {
+    if !cost.is_finite() || cost <= 0.0 {
+        return "$0".to_string();
+    }
+
+    if cost < 0.01 {
+        format!("${cost:.4}")
+    } else {
+        format!("${cost:.2}")
+    }
+}
+
 /// Pad or truncate a string to exactly `width` columns.
 pub fn pad_to_width(s: &str, width: usize) -> String {
     let current = UnicodeWidthStr::width(s);
@@ -58,6 +80,12 @@ pub fn pad_to_width(s: &str, width: usize) -> String {
         let padding = width - current;
         format!("{s}{}", " ".repeat(padding))
     }
+}
+
+fn format_compact_decimal(value: f64, suffix: &str) -> String {
+    let value = format!("{value:.1}");
+    let value = value.strip_suffix(".0").unwrap_or(&value);
+    format!("{value}{suffix}")
 }
 
 #[cfg(test)]
@@ -102,6 +130,22 @@ mod tests {
     #[test]
     fn test_format_elapsed_future() {
         assert_eq!(format_elapsed(100, 200), "");
+    }
+
+    #[test]
+    fn test_format_token_count() {
+        assert_eq!(format_token_count(999), "999");
+        assert_eq!(format_token_count(1_500), "1.5k");
+        assert_eq!(format_token_count(12_000), "12k");
+        assert_eq!(format_token_count(1_250_000), "1.2M");
+    }
+
+    #[test]
+    fn test_format_cost_usd() {
+        assert_eq!(format_cost_usd(0.0), "$0");
+        assert_eq!(format_cost_usd(0.00123), "$0.0012");
+        assert_eq!(format_cost_usd(0.123), "$0.12");
+        assert_eq!(format_cost_usd(12.345), "$12.35");
     }
 
     #[test]

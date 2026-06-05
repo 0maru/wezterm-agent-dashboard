@@ -2,6 +2,7 @@ use crate::SPINNER_ICON;
 use crate::SPINNER_PULSE;
 use crate::state::{AgentFilter, AppState, Focus, RepoFilter};
 use crate::ui::text;
+use crate::usage;
 use crate::wezterm::PaneStatus;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -206,6 +207,31 @@ impl Widget for AgentList<'_> {
                         progress.display(),
                         Style::default().fg(self.state.ui.theme.dimmed),
                     ));
+                }
+
+                // トークン使用量
+                if !pane.usage.is_empty() {
+                    let mut usage_parts = Vec::new();
+                    if pane.usage.total_tokens() > 0 {
+                        usage_parts.push(format!(
+                            "tok {}",
+                            text::format_token_count(pane.usage.total_tokens())
+                        ));
+                    }
+                    if let Some(cost) = pane.usage.cost_usd {
+                        usage_parts.push(text::format_cost_usd(cost));
+                    }
+                    if !pane.usage.model.is_empty() {
+                        usage_parts.push(usage::compact_model_name(&pane.usage.model));
+                    }
+
+                    if !usage_parts.is_empty() {
+                        spans.push(Span::raw("  "));
+                        spans.push(Span::styled(
+                            usage_parts.join(" "),
+                            Style::default().fg(self.state.theme.dimmed),
+                        ));
+                    }
                 }
 
                 // Elapsed time

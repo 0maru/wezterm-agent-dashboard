@@ -246,6 +246,7 @@ fn make_workspaces(
             wait_reason: String::new(),
             permission_mode: PermissionMode::Default,
             subagents: Vec::new(),
+            usage: wezterm_agent_dashboard::usage::UsageStats::default(),
         });
     }
 

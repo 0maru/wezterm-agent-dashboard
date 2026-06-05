@@ -1,3 +1,4 @@
+use crate::usage::UsageStats;
 use indexmap::IndexMap;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -133,6 +134,7 @@ pub struct PaneInfo {
     pub wait_reason: String,
     pub permission_mode: PermissionMode,
     pub subagents: Vec<String>,
+    pub usage: UsageStats,
 }
 
 // ---------------------------------------------------------------------------
@@ -321,6 +323,8 @@ fn parse_pane_info(raw: &RawWezTermPane) -> Option<PaneInfo> {
         .map(|s| s.split(',').map(|t| t.to_string()).collect())
         .unwrap_or_default();
 
+    let usage = parse_usage_stats(&raw.user_vars);
+
     Some(PaneInfo {
         pane_id: raw.pane_id,
         tab_id: raw.tab_id,
@@ -337,7 +341,42 @@ fn parse_pane_info(raw: &RawWezTermPane) -> Option<PaneInfo> {
         wait_reason,
         permission_mode,
         subagents,
+        usage,
     })
+}
+
+fn parse_usage_stats(user_vars: &HashMap<String, String>) -> UsageStats {
+    let cost_usd = user_vars
+        .get("agent_cost_usd")
+        .and_then(|cost| cost.parse::<f64>().ok())
+        .filter(|cost| cost.is_finite() && *cost >= 0.0);
+    let mut cache_creation_tokens = parse_u64_var(user_vars, "agent_cache_creation_tokens");
+    let cache_read_tokens = parse_u64_var(user_vars, "agent_cache_read_tokens");
+
+    if cache_creation_tokens == 0 && cache_read_tokens == 0 {
+        cache_creation_tokens = parse_u64_var(user_vars, "agent_cached_tokens");
+    }
+
+    UsageStats {
+        input_tokens: parse_u64_var(user_vars, "agent_input_tokens"),
+        output_tokens: parse_u64_var(user_vars, "agent_output_tokens"),
+        cache_creation_tokens,
+        cache_creation_5m_tokens: 0,
+        cache_creation_1h_tokens: 0,
+        cache_read_tokens,
+        cost_usd,
+        model: user_vars
+            .get("agent_usage_model")
+            .cloned()
+            .unwrap_or_default(),
+    }
+}
+
+fn parse_u64_var(user_vars: &HashMap<String, String>, key: &str) -> u64 {
+    user_vars
+        .get(key)
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or_default()
 }
 
 /// Simple URL decoding for file:// paths (handles %20, etc.)
@@ -523,6 +562,46 @@ mod tests {
     }
 
     #[test]
+    fn test_build_workspaces_parses_usage_vars() {
+        let mut user_vars = HashMap::new();
+        user_vars.insert("agent_type".to_string(), "claude".to_string());
+        user_vars.insert("agent_status".to_string(), "idle".to_string());
+        user_vars.insert("agent_input_tokens".to_string(), "1000".to_string());
+        user_vars.insert("agent_output_tokens".to_string(), "200".to_string());
+        user_vars.insert("agent_cache_creation_tokens".to_string(), "300".to_string());
+        user_vars.insert("agent_cache_read_tokens".to_string(), "400".to_string());
+        user_vars.insert("agent_cost_usd".to_string(), "0.012345".to_string());
+        user_vars.insert(
+            "agent_usage_model".to_string(),
+            "claude-sonnet-4-6".to_string(),
+        );
+
+        let raw = vec![RawWezTermPane {
+            window_id: 0,
+            tab_id: 0,
+            tab_title: "test".to_string(),
+            pane_id: 1,
+            workspace: "default".to_string(),
+            title: "claude".to_string(),
+            cwd: "file:///home/user/project".to_string(),
+            is_active: true,
+            is_zoomed: false,
+            tty_name: String::new(),
+            user_vars,
+        }];
+
+        let result = build_workspaces(raw, None);
+        let usage = &result[0].tabs[0].panes[0].usage;
+
+        assert_eq!(usage.input_tokens, 1000);
+        assert_eq!(usage.output_tokens, 200);
+        assert_eq!(usage.cache_creation_tokens, 300);
+        assert_eq!(usage.cache_read_tokens, 400);
+        assert_eq!(usage.cost_usd, Some(0.012345));
+        assert_eq!(usage.model, "claude-sonnet-4-6");
+    }
+
+    #[test]
     fn test_permission_mode_from_str() {
         assert_eq!(PermissionMode::from_str("plan"), PermissionMode::Plan);
         assert_eq!(
@@ -579,6 +658,7 @@ mod tests {
                         wait_reason: String::new(),
                         permission_mode: PermissionMode::Default,
                         subagents: Vec::new(),
+                        usage: UsageStats::default(),
                     },
                     PaneInfo {
                         pane_id: 2,
@@ -596,6 +676,7 @@ mod tests {
                         wait_reason: String::new(),
                         permission_mode: PermissionMode::Default,
                         subagents: Vec::new(),
+                        usage: UsageStats::default(),
                     },
                 ],
             }],
@@ -627,6 +708,7 @@ mod tests {
                     wait_reason: String::new(),
                     permission_mode: PermissionMode::Default,
                     subagents: Vec::new(),
+                    usage: UsageStats::default(),
                 }],
             }],
         }];

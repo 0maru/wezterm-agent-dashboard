@@ -1,5 +1,6 @@
 use crate::cli::label::extract_tool_label;
 use crate::cli::{json_str, local_time_hhmm, read_stdin_json, sanitize_value};
+use crate::usage::{self, UsageStats};
 use crate::user_vars;
 use serde_json::Value;
 use std::fs::{self, OpenOptions};
@@ -19,6 +20,13 @@ const ALL_AGENT_VARS: &[&str] = &[
     "agent_subagents",
     "agent_cwd",
     "agent_attention",
+    "agent_input_tokens",
+    "agent_output_tokens",
+    "agent_cached_tokens",
+    "agent_cache_creation_tokens",
+    "agent_cache_read_tokens",
+    "agent_cost_usd",
+    "agent_usage_model",
 ];
 
 /// Handle a hook event from an AI agent.
@@ -44,6 +52,10 @@ pub fn cmd_hook(args: &[String]) -> i32 {
     }
 
     let input = read_stdin_json();
+    let should_update_usage = matches!(
+        event,
+        "user-prompt-submit" | "notification" | "stop" | "stop-failure" | "activity-log"
+    );
 
     match event {
         "user-prompt-submit" => handle_user_prompt_submit(agent, &input),
@@ -56,6 +68,10 @@ pub fn cmd_hook(args: &[String]) -> i32 {
         "subagent-start" => handle_subagent_start(&input),
         "subagent-stop" => handle_subagent_stop(&input),
         _ => {}
+    }
+
+    if should_update_usage {
+        update_usage_vars(&input);
     }
 
     0
@@ -236,6 +252,40 @@ fn update_cwd_and_mode(agent: &str, input: &Value) {
             user_vars::set_user_var("agent_permission_mode", mode);
         }
     }
+}
+
+fn update_usage_vars(input: &Value) {
+    let Some(stats) = usage::extract_usage(input) else {
+        return;
+    };
+
+    set_usage_vars(&stats);
+}
+
+fn set_usage_vars(stats: &UsageStats) {
+    let input_tokens = stats.input_tokens.to_string();
+    let output_tokens = stats.output_tokens.to_string();
+    let cached_tokens = stats.cached_tokens().to_string();
+    let cache_creation_tokens = stats.cache_creation_tokens.to_string();
+    let cache_read_tokens = stats.cache_read_tokens.to_string();
+    let cost_usd = stats
+        .cost_usd
+        .map(|cost| format!("{cost:.6}"))
+        .unwrap_or_default();
+    let model = sanitize_value(&stats.model);
+
+    user_vars::set_user_vars(&[
+        ("agent_input_tokens", input_tokens.as_str()),
+        ("agent_output_tokens", output_tokens.as_str()),
+        ("agent_cached_tokens", cached_tokens.as_str()),
+        (
+            "agent_cache_creation_tokens",
+            cache_creation_tokens.as_str(),
+        ),
+        ("agent_cache_read_tokens", cache_read_tokens.as_str()),
+        ("agent_cost_usd", cost_usd.as_str()),
+        ("agent_usage_model", model.as_str()),
+    ]);
 }
 
 fn is_system_message(prompt: &str) -> bool {

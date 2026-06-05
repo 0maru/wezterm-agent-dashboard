@@ -153,6 +153,12 @@ Add the following to `~/.claude/settings.json`:
     ],
     "PostToolUse": [
       { "hooks": [{ "type": "command", "command": "wezterm-agent-dashboard hook claude activity-log" }] }
+    ],
+    "SubagentStart": [
+      { "hooks": [{ "type": "command", "command": "wezterm-agent-dashboard hook claude subagent-start" }] }
+    ],
+    "SubagentStop": [
+      { "hooks": [{ "type": "command", "command": "wezterm-agent-dashboard hook claude subagent-stop" }] }
     ]
   }
 }
@@ -172,6 +178,8 @@ The third argument passed to `hook` maps to the following agent state transition
 | `session-end` | Clear state and activity log |
 | `activity-log` | Append a tool-use entry to the activity log |
 | `subagent-start` / `subagent-stop` | Track active subagents |
+
+Subagent state is tracked per pane using the hook payload's `agent_id` and `agent_type`. When older payloads only provide `current_subagents`, the hook uses that value as a fallback.
 
 Replace `claude` with `codex` for Codex hooks.
 

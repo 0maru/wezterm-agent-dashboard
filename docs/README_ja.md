@@ -153,6 +153,12 @@ agent_dashboard.apply_to_config(config)
     ],
     "PostToolUse": [
       { "hooks": [{ "type": "command", "command": "wezterm-agent-dashboard hook claude activity-log" }] }
+    ],
+    "SubagentStart": [
+      { "hooks": [{ "type": "command", "command": "wezterm-agent-dashboard hook claude subagent-start" }] }
+    ],
+    "SubagentStop": [
+      { "hooks": [{ "type": "command", "command": "wezterm-agent-dashboard hook claude subagent-stop" }] }
     ]
   }
 }
@@ -172,6 +178,8 @@ agent_dashboard.apply_to_config(config)
 | `session-end` | 状態とアクティビティログをクリア |
 | `activity-log` | ツール使用のエントリをアクティビティログに追加 |
 | `subagent-start` / `subagent-stop` | 起動中のサブエージェントを追跡 |
+
+subagent の状態は pane ごとに管理し、hook payload の `agent_id` と `agent_type` を使って更新します。古い payload で `current_subagents` しかない場合は、その値を fallback として使います。
 
 Codex のフックでは `claude` の代わりに `codex` を渡してください。
 
